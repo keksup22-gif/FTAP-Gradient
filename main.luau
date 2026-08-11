@@ -54,8 +54,7 @@ local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/
 local Window = Fluent:CreateWindow({
     Title = "Gradient Hub | FTAP",
     SubTitle = "by keksup22",
-    TabWidth = 160,
-    Size = UDim2.fromOffset(580, 460),
+    Size = UDim2.fromOffset(880, 540),
     Acrylic = false,
     Theme = "Dark",
     MinimizeKey = Enum.KeyCode.LeftControl
@@ -66,18 +65,23 @@ _G.GradientWindow = Window
 _G.GradientWindows = _G.GradientWindows or {}
 table.insert(_G.GradientWindows, Window)
 
--- Shared 5-tab layout: every module maps its own controls onto these.
+-- Shared 8-tab layout (horizontal, top bar): every module maps its
+-- own controls onto these keys. Each tab has a lucide icon.
 _G.GradientTabs = {
-    Protections = Window:AddTab({ Title = "🛡️ Protections", Icon = "shield" }),
-    Movement = Window:AddTab({ Title = "🏃 Movement", Icon = "user" }),
-    Combat = Window:AddTab({ Title = "🎯 Combat & Grabs", Icon = "target" }),
-    Server = Window:AddTab({ Title = "⚡ Server & Auras", Icon = "bolt" }),
-    Misc = Window:AddTab({ Title = "⚙️ Misc & Settings", Icon = "settings" })
+    Protections = Window:AddTab({ Title = "Protections", Icon = "shield" }),
+    Movement = Window:AddTab({ Title = "Movement", Icon = "person-standing" }),
+    Combat = Window:AddTab({ Title = "Combat", Icon = "swords" }),
+    Visuals = Window:AddTab({ Title = "Visuals", Icon = "sparkles" }),
+    Server = Window:AddTab({ Title = "Server", Icon = "server" }),
+    Misc = Window:AddTab({ Title = "Misc", Icon = "wrench" }),
+    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
+    Info = Window:AddTab({ Title = "Info", Icon = "info" })
 }
 
 local BaseUrl = "https://raw.githubusercontent.com/keksup22-gif/FTAP-Gradient/main/"
 
 local Modules = {
+    "ftap_layout.luau",
     "ftap_uisettings.luau",
     "ftap_mercury_visuals.luau",
     "ftap_modules.luau",
@@ -86,7 +90,8 @@ local Modules = {
     "ftap_server.luau",
     "ftap_server_auras.luau",
     "ftap_misc.luau",
-    "ftap_watermark.luau"
+    "ftap_watermark.luau",
+    "ftap_info.luau"
 }
 
 for _, file in ipairs(Modules) do
@@ -104,3 +109,13 @@ for _, file in ipairs(Modules) do
 end
 
 print("[Gradient] Finished loading all modules!")
+
+-- Auto-select the first tab once every module finished adding tabs,
+-- so the horizontal interface opens ready to use.
+task.delay(0.2, function()
+    pcall(function()
+        if _G.GradientLayout and _G.GradientLayout.selectScreen then
+            _G.GradientLayout.selectScreen(1)
+        end
+    end)
+end)

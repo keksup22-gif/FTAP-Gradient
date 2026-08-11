@@ -65,7 +65,7 @@ end
 local Tabs = {
     Server = _G.GradientTabs and _G.GradientTabs.Server or Window:AddTab({ Title = "Server & Auras", Icon = "server" }),
     Protections = _G.GradientTabs and _G.GradientTabs.Protections or Window:AddTab({ Title = "Protections", Icon = "shield" }),
-    Settings = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "settings" })
+    Settings = _G.GradientTabs and _G.GradientTabs.Settings or Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
 -- ================================================================

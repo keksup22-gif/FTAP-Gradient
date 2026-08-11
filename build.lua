@@ -1,9 +1,10 @@
 --[[
     ================================================================
     Gradient Hub | FTAP - MONOLITHIC BUILD (build.lua)
-    Combined from: main.luau + all 9 modules, in loader order.
+    Combined from: main.luau + all modules, in loader order.
     Each module is isolated in its own pcall(function() end) wrapper,
     mirroring the original loadstring-per-module behavior.
+    Horizontal top-tab interface (Fluid-style) + premium glass theme.
     ================================================================
 --]]
 
@@ -63,8 +64,7 @@ local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/
 local Window = Fluent:CreateWindow({
     Title = "Gradient Hub | FTAP",
     SubTitle = "by keksup22",
-    TabWidth = 160,
-    Size = UDim2.fromOffset(580, 460),
+    Size = UDim2.fromOffset(880, 540),
     Acrylic = false,
     Theme = "Dark",
     MinimizeKey = Enum.KeyCode.LeftControl
@@ -75,17 +75,371 @@ _G.GradientWindow = Window
 _G.GradientWindows = _G.GradientWindows or {}
 table.insert(_G.GradientWindows, Window)
 
--- Shared 5-tab layout: every module maps its own controls onto these.
+-- Shared 8-tab layout (horizontal, top bar): every module maps its
+-- own controls onto these keys. Each tab has a lucide icon.
 _G.GradientTabs = {
-    Protections = Window:AddTab({ Title = "🛡️ Protections", Icon = "shield" }),
-    Movement = Window:AddTab({ Title = "🏃 Movement", Icon = "user" }),
-    Combat = Window:AddTab({ Title = "🎯 Combat & Grabs", Icon = "target" }),
-    Server = Window:AddTab({ Title = "⚡ Server & Auras", Icon = "bolt" }),
-    Misc = Window:AddTab({ Title = "⚙️ Misc & Settings", Icon = "settings" })
+    Protections = Window:AddTab({ Title = "Protections", Icon = "shield" }),
+    Movement = Window:AddTab({ Title = "Movement", Icon = "person-standing" }),
+    Combat = Window:AddTab({ Title = "Combat", Icon = "swords" }),
+    Visuals = Window:AddTab({ Title = "Visuals", Icon = "sparkles" }),
+    Server = Window:AddTab({ Title = "Server", Icon = "server" }),
+    Misc = Window:AddTab({ Title = "Misc", Icon = "wrench" }),
+    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
+    Info = Window:AddTab({ Title = "Info", Icon = "info" })
 }
 
 local BaseUrl = "https://raw.githubusercontent.com/keksup22-gif/FTAP-Gradient/main/"
 
+
+-- ================================================================
+-- BEG MODULE: ftap_layout.luau
+-- ================================================================
+pcall(function()
+--[[
+    ================================================================
+    Gradient Hub - Layout & Style Engine
+    Converts the shared Fluent window to a HORIZONTAL top tab bar
+    (Fluid-style) and applies a premium glass-gradient theme:
+      * 8 tab pills laid out in one row on top of the window
+      * custom gradient accent colors, strokes, rounded glass panels
+      * animated accent underline under the active tab
+      * clean spacing + re-positioned page header / content area
+    Runs from main.luau right after the window is created.
+    File: ftap_layout.luau
+    ================================================================
+--]]
+
+local RunService = game:GetService("RunService")
+
+local Layout = {}
+
+local state = {
+    window = nil,
+    bar = nil,
+    underline = nil,
+    selected = nil,
+    selectedIndex = 1,
+    tabW = 102,
+    tabH = 32,
+    barH = 38,
+}
+
+local function getTabButtons(holder)
+    local out = {}
+    for _, child in ipairs(holder:GetChildren()) do
+        if child:IsA("TextButton") then
+            table.insert(out, child)
+        end
+    end
+    return out
+end
+
+local function applySelectedStroke()
+    local w = state.window
+    if not w then return end
+    for _, btn in ipairs(getTabButtons(w.TabHolder)) do
+        local stroke = btn:FindFirstChild("GradientTabStroke")
+        if stroke then
+            stroke.Transparency = if btn == state.selected then 0.25 else 1
+        end
+    end
+end
+
+local function positionUnderline()
+    local w, bar, underline = state.window, state.bar, state.underline
+    if not underline then return end
+    local btn = state.selected
+    if not btn or not btn.Parent then
+        underline.Visible = false
+        return
+    end
+    local ok, x, wid = pcall(function()
+        local ax = btn.AbsolutePosition
+        local bx = bar.AbsolutePosition
+        return ax.X - bx.X, btn.AbsoluteSize.X
+    end)
+    if not ok then
+        underline.Visible = false
+        return
+    end
+    underline.Size = UDim2.fromOffset(wid, 4)
+    underline.Position = UDim2.new(0, x, 0, state.barH - 3)
+    underline.Visible = wid > 4
+end
+
+local cornerRadius = 8
+
+local function styleTab(btn)
+    btn.Size = UDim2.fromOffset(state.tabW, state.tabH)
+    btn.ZIndex = 3
+    btn.AutoButtonColor = false
+    for _, child in ipairs(btn:GetChildren()) do
+        if child:IsA("UICorner") then
+            child.CornerRadius = UDim.new(0, cornerRadius)
+        end
+    end
+    if not btn:FindFirstChild("GradientTabStroke") then
+        local stroke = Instance.new("UIStroke")
+        stroke.Name = "GradientTabStroke"
+        stroke.Thickness = 1.2
+        stroke.Transparency = 1
+        stroke.Color = Color3.fromRGB(150, 110, 255)
+        stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        stroke.Parent = btn
+    end
+    btn.MouseButton1Click:Connect(function()
+        state.selected = btn
+        applySelectedStroke()
+        positionUnderline()
+    end)
+end
+
+local function makeGradientImpl(gradient, keys)
+    local pts = {}
+    for i, key in ipairs(keys) do
+        table.insert(pts, ColorSequenceKeypoint.new(key[1], key[2]))
+    end
+    gradient.Color = ColorSequence.new(pts)
+end
+
+local function instanceNewCorner(instance, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radius)
+    corner.Parent = instance
+    return corner
+end
+
+-- ================================================================
+-- Layout.patch(window) - core conversion + premium styling
+-- ================================================================
+
+function Layout.patch(window)
+    return pcall(function()
+        local w = window
+        local holder = w.TabHolder
+        assert(holder, "[Layout] Missing TabHolder")
+        local bar = holder.Parent
+        assert(bar, "[Layout] Missing tab bar")
+
+        state.window = w
+        state.bar = bar
+
+        -- 1) Tab bar moved to the TOP of the window
+        bar.Size = UDim2.new(1, -24, 0, state.barH)
+        bar.Position = UDim2.new(0, 12, 0, 52)
+        bar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        bar.BackgroundTransparency = 0.88
+        bar.BorderSizePixel = 0
+
+        -- glass bar: rounded corners + gradient sheen + soft stroke
+        local barCorner = Instance.new("UICorner")
+        barCorner.CornerRadius = UDim.new(0, 12)
+        barCorner.Name = "GradientBarCorner"
+        barCorner.Parent = bar
+
+        local barGrad = Instance.new("UIGradient")
+        barGrad.Name = "GradientBarGradient"
+        barGrad.Rotation = 90
+        barGrad.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.55),
+            NumberSequenceKeypoint.new(1, 0.88),
+        })
+        barGrad.Parent = bar
+
+        local barStroke = Instance.new("UIStroke")
+        barStroke.Name = "GradientBarStroke"
+        barStroke.Thickness = 1
+        barStroke.Transparency = 0.9
+        barStroke.Color = Color3.fromRGB(255, 255, 255)
+        barStroke.Parent = bar
+
+        -- 2) Horizontal scrolling tab holder (proper Fluent properties)
+        holder.ScrollingDirection = Enum.ScrollingDirection.X
+        holder.ScrollBarImageTransparency = 1
+        holder.BorderSizePixel = 0
+
+        local lay = holder:FindFirstChildOfClass("UIListLayout")
+        if lay then
+            lay.FillDirection = Enum.FillDirection.Horizontal
+            lay.HorizontalAlignment = Enum.HorizontalAlignment.Left
+            lay.VerticalAlignment = Enum.VerticalAlignment.Center
+            lay.Padding = UDim.new(4, 0)
+            lay:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+                holder.CanvasSize = UDim2.new(0, lay.AbsoluteContentSize.X + 4, 0, 0)
+            end)
+            holder.CanvasSize = UDim2.new(0, lay.AbsoluteContentSize.X + 4, 0, 0)
+        end
+
+        -- 3) Accent underline (bottom of active tab)
+        local underline
+        for _, child in ipairs(bar:GetChildren()) do
+            if child:IsA("Frame") then
+                underline = child
+                break
+            end
+        end
+        if not underline then
+            underline = Instance.new("Frame")
+            underline.Name = "GradientUnderline"
+            underline.BackgroundColor3 = Color3.fromRGB(255, 170, 60)
+            underline.Parent = bar
+        end
+        underline.Name = "GradientUnderline"
+        underline.AnchorPoint = Vector2.new(0, 1)
+        underline.ZIndex = 4
+        underline.BorderSizePixel = 0
+        underline.Size = UDim2.fromOffset(0, 4)
+        underline.Position = UDim2.new(0, 0, 0, state.barH - 3)
+        underline.Visible = false
+        local existingCorner = underline:FindFirstChildOfClass("UICorner")
+        if existingCorner then
+            existingCorner.CornerRadius = UDim.new(0, 4)
+        else
+            instanceNewCorner(underline, 4)
+        end
+        local underlineGrad = Instance.new("UIGradient")
+        underlineGrad.Name = "GradientUnderlineGradient"
+        makeGradientImpl(underlineGrad, {
+            { 0, Color3.fromRGB(124, 92, 255) },
+            { 0.5, Color3.fromRGB(140, 92, 255) },
+            { 1, Color3.fromRGB(90, 190, 255) },
+        })
+        underlineGrad.Parent = underline
+        state.underline = underline
+
+        -- 4) Override Fluent's animated motors so they respect the
+        --    horizontal layout (our onStep callbacks run last).
+        w.SelectorPosMotor:onStep(function()
+            positionUnderline()
+        end)
+        w.SelectorSizeMotor:onStep(function()
+            positionUnderline()
+        end)
+        w.ContainerPosMotor:onStep(function(K)
+            w.ContainerHolder.Position = UDim2.fromOffset(12, K + 34)
+        end)
+        w.TabHolder:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+            positionUnderline()
+        end)
+
+        -- 5) Restyle already-existing tabs + hook future ones
+        for _, btn in ipairs(getTabButtons(holder)) do
+            styleTab(btn)
+        end
+        holder.ChildAdded:Connect(function(child)
+            if child:IsA("TextButton") then
+                styleTab(child)
+            end
+        end)
+
+        -- 6) Content area below the tab bar + header
+        w.ContainerHolder.Size = UDim2.new(1, -24, 1, -156)
+        w.ContainerHolder.Position = UDim2.fromOffset(12, 128)
+
+        w.TabDisplay.Position = UDim2.fromOffset(14, 98)
+        w.TabDisplay.Size = UDim2.new(1, -28, 0, 22)
+        w.TabDisplay.TextSize = 22
+        w.TabDisplay.TextTransparency = 0.12
+        w.TabDisplay.TextXAlignment = Enum.TextXAlignment.Left
+        w.TabDisplay.ZIndex = 2
+
+        -- 7) Premium window surface (glass gradient panel)
+        local bg = Instance.new("Frame")
+        bg.Name = "GradientWindowSurface"
+        bg.AnchorPoint = Vector2.new(0.5, 0.5)
+        bg.Position = UDim2.fromScale(0.5, 0.5)
+        bg.Size = UDim2.fromScale(1, 1)
+        bg.BackgroundColor3 = Color3.fromRGB(26, 28, 46)
+        bg.BackgroundTransparency = 0.03
+        bg.BorderSizePixel = 0
+        bg.ZIndex = -5
+        instanceNewCorner(bg, 16)
+        local bgGrad = Instance.new("UIGradient")
+        bgGrad.Name = "GradientSurfaceGradient"
+        bgGrad.Rotation = 68
+        makeGradientImpl(bgGrad, {
+            { 0, Color3.fromRGB(34, 32, 62) },
+            { 0.45, Color3.fromRGB(24, 24, 44) },
+            { 1, Color3.fromRGB(14, 14, 26) },
+        })
+        bgGrad.Parent = bg
+        local bgStroke = Instance.new("UIStroke")
+        bgStroke.Name = "GradientSurfaceStroke"
+        bgStroke.Thickness = 1.3
+        bgStroke.Transparency = 0.55
+        bgStroke.Color = Color3.fromRGB(150, 100, 255)
+        bgStroke.Parent = bg
+        bg.Parent = w.Root
+
+        -- 8) Premium top accent strip (gradient bar across the window top)
+        local strip = Instance.new("Frame")
+        strip.Name = "GradientTopStrip"
+        strip.AnchorPoint = Vector2.new(0.5, 0)
+        strip.Position = UDim2.fromScale(0.5, 0)
+        strip.Size = UDim2.new(1, 0, 0, 3)
+        strip.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        strip.BackgroundTransparency = 1
+        strip.BorderSizePixel = 0
+        strip.ZIndex = 10
+        local stripGrad = Instance.new("UIGradient")
+        stripGrad.Rotation = 90
+        makeGradientImpl(stripGrad, {
+            { 0, Color3.fromRGB(124, 92, 255) },
+            { 0.5, Color3.fromRGB(140, 120, 255) },
+            { 1, Color3.fromRGB(90, 190, 255) },
+        })
+        stripGrad.Parent = strip
+        strip.Parent = w.Root
+
+        w.Root.ClipsDescendants = true
+
+        _G.GradientLayout = Layout
+        return true
+    end)
+end
+
+-- ================================================================
+-- Layout.selectScreen(index) - programmatic tab select (first tab)
+-- ================================================================
+
+function Layout.selectScreen(index)
+    if not state.window then return end
+    local buttons = getTabButtons(state.window.TabHolder)
+    local btn = buttons[index or state.selectedIndex]
+    if not btn then return end
+    state.selected = btn
+    state.selectedIndex = index or 1
+    applySelectedStroke()
+    positionUnderline()
+    pcall(function()
+        btn:Fire("MouseButton1Click")
+    end)
+    -- Fallback: make sure the target container is visible even if the
+    -- synthetic click above did not propagate on the current executor.
+    task.delay(0.1, function()
+        pcall(function()
+            local containers = {}
+            for _, child in ipairs(state.window.ContainerHolder:GetChildren()) do
+                if child:IsA("ScrollingFrame") then
+                    table.insert(containers, child)
+                end
+            end
+            for i, container in ipairs(containers) do
+                container.Visible = (i == state.selectedIndex)
+            end
+        end)
+    end)
+end
+
+-- Auto-patch the shared window as soon as this module loads.
+if _G.GradientWindow then
+    Layout.patch(_G.GradientWindow)
+end
+
+return Layout
+end)
+print('[Gradient] OK: ftap_layout.luau')
+task.wait(0.1)
 
 -- ================================================================
 -- BEG MODULE: ftap_uisettings.luau
@@ -160,11 +514,11 @@ end
 UIState.Window = Window
 
 local Tabs = {
-    Appearance = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "palette" }),
-    Keybinds = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "key" }),
-    ThemeColors = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "droplet" }),
-    ThemeManager = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "save" }),
-    ConfigManager = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "folder" })
+    Appearance = _G.GradientTabs and _G.GradientTabs.Settings or Window:AddTab({ Title = "Settings", Icon = "palette" }),
+    Keybinds = _G.GradientTabs and _G.GradientTabs.Settings or Window:AddTab({ Title = "Settings", Icon = "key" }),
+    ThemeColors = _G.GradientTabs and _G.GradientTabs.Settings or Window:AddTab({ Title = "Settings", Icon = "droplet" }),
+    ThemeManager = _G.GradientTabs and _G.GradientTabs.Settings or Window:AddTab({ Title = "Settings", Icon = "save" }),
+    ConfigManager = _G.GradientTabs and _G.GradientTabs.Settings or Window:AddTab({ Title = "Settings", Icon = "folder" })
 }
 UIState.Tabs = Tabs
 
@@ -858,13 +1212,13 @@ end
 -- Interface Tabs (mapped onto shared 4-tab layout)
 local Tabs = {
     PCLD = _G.GradientTabs and _G.GradientTabs.Protections or Window:AddTab({ Title = "Protections", Icon = "shield" }),
-    Players = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "user" }),
-    Objects = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "box" }),
-    Shaders = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "sun" }),
-    Blackhole = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "disc" }),
-    Sounds = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "volume-2" }),
-    Spectate = _G.GradientTabs and _G.GradientTabs.Combat or Window:AddTab({ Title = "Combat & Grabs", Icon = "eye" }),
-    Settings = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "settings" })
+    Players = _G.GradientTabs and _G.GradientTabs.Visuals or Window:AddTab({ Title = "Visuals", Icon = "user" }),
+    Objects = _G.GradientTabs and _G.GradientTabs.Visuals or Window:AddTab({ Title = "Visuals", Icon = "box" }),
+    Shaders = _G.GradientTabs and _G.GradientTabs.Visuals or Window:AddTab({ Title = "Visuals", Icon = "sun" }),
+    Blackhole = _G.GradientTabs and _G.GradientTabs.Visuals or Window:AddTab({ Title = "Visuals", Icon = "disc" }),
+    Sounds = _G.GradientTabs and _G.GradientTabs.Visuals or Window:AddTab({ Title = "Visuals", Icon = "volume-2" }),
+    Spectate = _G.GradientTabs and _G.GradientTabs.Combat or Window:AddTab({ Title = "Combat", Icon = "eye" }),
+    Settings = _G.GradientTabs and _G.GradientTabs.Settings or Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
 -- Throttle helper: runs heavy render work at most once per interval, wrapped in pcall
@@ -2225,6 +2579,7 @@ end
 if not _alreadyRegistered then
     table.insert(_G.GradientWindows, Window)
 end
+
 end)
 print('[Gradient] OK: ftap_mercury_visuals.luau')
 task.wait(0.1)
@@ -2299,7 +2654,7 @@ end
 local Tabs = {
     LocalPlayer = _G.GradientTabs and _G.GradientTabs.Movement or Window:AddTab({ Title = "Movement", Icon = "user" }),
     Protection = _G.GradientTabs and _G.GradientTabs.Protections or Window:AddTab({ Title = "Protections", Icon = "shield" }),
-    Settings = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "settings" })
+    Settings = _G.GradientTabs and _G.GradientTabs.Settings or Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
 -- ================================================================
@@ -3529,6 +3884,7 @@ end
 if not _alreadyRegistered then
     table.insert(_G.GradientWindows, Window)
 end
+
 end)
 print('[Gradient] OK: ftap_modules.luau')
 task.wait(0.1)
@@ -3599,7 +3955,7 @@ end
 
 local Tabs = {
     Target = _G.GradientTabs and _G.GradientTabs.Combat or Window:AddTab({ Title = "Combat & Grabs", Icon = "target" }),
-    Settings = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "settings" })
+    Settings = _G.GradientTabs and _G.GradientTabs.Settings or Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
 -- ================================================================
@@ -4676,6 +5032,7 @@ end
 if not _alreadyRegistered then
     table.insert(_G.GradientWindows, Window)
 end
+
 end)
 print('[Gradient] OK: ftap_target.luau')
 task.wait(0.1)
@@ -4746,7 +5103,7 @@ end
 
 local Tabs = {
     Grabs = _G.GradientTabs and _G.GradientTabs.Combat or Window:AddTab({ Title = "Combat & Grabs", Icon = "hand" }),
-    Settings = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "settings" })
+    Settings = _G.GradientTabs and _G.GradientTabs.Settings or Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
 -- ================================================================
@@ -5265,6 +5622,7 @@ end
 if not _alreadyRegistered then
     table.insert(_G.GradientWindows, Window)
 end
+
 end)
 print('[Gradient] OK: ftap_grabs.luau')
 task.wait(0.1)
@@ -5340,7 +5698,7 @@ end
 local Tabs = {
     Server = _G.GradientTabs and _G.GradientTabs.Server or Window:AddTab({ Title = "Server & Auras", Icon = "server" }),
     Protections = _G.GradientTabs and _G.GradientTabs.Protections or Window:AddTab({ Title = "Protections", Icon = "shield" }),
-    Settings = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "settings" })
+    Settings = _G.GradientTabs and _G.GradientTabs.Settings or Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
 -- ================================================================
@@ -6278,6 +6636,7 @@ end
 if not _alreadyRegistered then
     table.insert(_G.GradientWindows, Window)
 end
+
 end)
 print('[Gradient] OK: ftap_server.luau')
 task.wait(0.1)
@@ -6342,7 +6701,7 @@ end
 
 local Tabs = {
     Server = _G.GradientTabs and _G.GradientTabs.Server or Window:AddTab({ Title = "Server & Auras", Icon = "bolt" }),
-    Settings = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "settings" })
+    Settings = _G.GradientTabs and _G.GradientTabs.Settings or Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
 -- ================================================================
@@ -7154,7 +7513,7 @@ end
 local Tabs = {
     Misc = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "sparkles" }),
     Protections = _G.GradientTabs and _G.GradientTabs.Protections or Window:AddTab({ Title = "Protections", Icon = "shield" }),
-    Settings = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "settings" })
+    Settings = _G.GradientTabs and _G.GradientTabs.Settings or Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
 -- ================================================================
@@ -8104,6 +8463,7 @@ end
 if not _alreadyRegistered then
     table.insert(_G.GradientWindows, Window)
 end
+
 end)
 print('[Gradient] OK: ftap_misc.luau')
 task.wait(0.1)
@@ -8258,4 +8618,172 @@ end)
 print('[Gradient] OK: ftap_watermark.luau')
 task.wait(0.1)
 
-print('[Gradient] Finished loading all modules (monolithic build)!')
+-- ================================================================
+-- BEG MODULE: ftap_info.luau
+-- ================================================================
+pcall(function()
+--[[
+    ================================================================
+    Gradient Hub - Info & Quick Utilities
+    Shows an about panel and a set of always-working utility
+    buttons (Rejoin / Server Hop / Respawn / Anti-AFK).
+    Target Game: Fling Things and People (FTAP)
+    Library: Fluent UI (shared via _G.GradientFluent)
+    File: ftap_info.luau
+    ================================================================
+--]]
+
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local VirtualUser = game:GetService("VirtualUser")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- Shared window created by main.luau (one window for all modules)
+local Fluent = _G.GradientFluent
+local Window = _G.GradientWindow
+if not Fluent or not Window then
+    Fluent = (function()
+        local ok, lib = pcall(function()
+            return loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+        end)
+        return (ok and lib) or error("[Gradient] Failed to load Fluent UI library.")
+    end)()
+    Window = Fluent:CreateWindow({
+        Title = "Gradient Hub | FTAP",
+        SubTitle = "by keksup22",
+        Size = UDim2.fromOffset(880, 540),
+        Acrylic = false,
+        Theme = "Dark",
+        MinimizeKey = Enum.KeyCode.LeftControl
+    })
+    _G.GradientFluent = Fluent
+    _G.GradientWindow = Window
+end
+
+local Tabs = {
+    Info = _G.GradientTabs and _G.GradientTabs.Info or Window:AddTab({ Title = "Info", Icon = "info" })
+}
+
+-- ================================================================
+-- ABOUT PANEL
+-- ================================================================
+
+Tabs.Info:AddSection("About Gradient Hub")
+Tabs.Info:AddParagraph({
+    Title = "Gradient Hub | FTAP",
+    Content = "Premium horizontal interface (8 tabs) built on the Fluent library.\nModules: Protections, Movement, Combat, Visuals, Server, Misc, Settings and this Info panel.\nEvery toggle / slider / button below is wired and works."
+})
+
+-- ================================================================
+-- QUICK UTILITIES (always working, pcall-guarded)
+-- ================================================================
+
+Tabs.Info:AddSection("Quick Utilities")
+
+Tabs.Info:AddButton({
+    Title = "Rejoin Server",
+    Description = "Leave and join the game again instantly.",
+    Callback = function()
+        pcall(function()
+            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        end)
+    end
+})
+
+Tabs.Info:AddButton({
+    Title = "Server Hop",
+    Description = "Find another public server with players and teleport to it.",
+    Callback = function()
+        pcall(function()
+            local res = HttpService:HttpGet("https://games.roblox.com/v1/games/" .. tostring(game.PlaceId) .. "/servers/Public?limit=100", true)
+            local data = HttpService:JSONDecode(res)
+            local target = nil
+            if data and data.data then
+                for _, server in ipairs(data.data) do
+                    if server.playing and server.playing < (server.maxPlayers or 100) and server.id and server.id ~= game.JobId then
+                        target = server.id
+                        break
+                    end
+                end
+            end
+            if target then
+                TeleportService:TeleportToPlaceInstance(game.PlaceId, target, LocalPlayer)
+            else
+                Fluent:Notify({ Title = "Server Hop", Content = "No other servers found.", Duration = 4 })
+            end
+        end)
+    end
+})
+
+Tabs.Info:AddButton({
+    Title = "Respawn Character",
+    Description = "Kill and instantly respawn your character.",
+    Callback = function()
+        pcall(function()
+            local char = LocalPlayer.Character
+            if char then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    hum.Health = 0
+                end
+            end
+        end)
+    end
+})
+
+local antiAfkOn = false
+local antiAfkTask = nil
+
+local function setAntiAfk(value)
+    antiAfkOn = value and true or false
+    if antiAfkOn then
+        antiAfkTask = task.spawn(function()
+            while antiAfkOn do
+                pcall(function()
+                    VirtualUser:CaptureController()
+                    VirtualUser:Button1Down(Vector2.new(0, 0), false)
+                    task.wait(0.1)
+                    VirtualUser:Button1Up(Vector2.new(0, 0), false)
+                end)
+                task.wait(600)
+            end
+        end)
+    else
+        if antiAfkTask then
+            task.cancel(antiAfkTask)
+            antiAfkTask = nil
+        end
+    end
+end
+
+local AntiAfkToggle = Tabs.Info:AddToggle("AntiAfkToggle", {
+    Title = "Anti-AFK",
+    Description = "Simulates input so you never get kicked for being idle.",
+    Default = false,
+    Callback = function(value)
+        setAntiAfk(value)
+    end
+})
+
+Tabs.Info:AddSection("Notes")
+Tabs.Info:AddParagraph({
+    Title = "One-window architecture",
+    Content = "All modules share a single window. Re-running the loader purges old connections and script-created objects before rebuilding the interface."
+})
+end)
+print('[Gradient] OK: ftap_info.luau')
+task.wait(0.1)
+
+print("[Gradient] Finished loading all modules (monolithic build)!")
+
+-- Auto-select the first tab once every module finished adding tabs,
+-- so the horizontal interface opens ready to use.
+task.delay(0.2, function()
+    pcall(function()
+        if _G.GradientLayout and _G.GradientLayout.selectScreen then
+            _G.GradientLayout.selectScreen(1)
+        end
+    end)
+end)

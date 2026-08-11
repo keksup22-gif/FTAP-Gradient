@@ -64,7 +64,7 @@ end
 local Tabs = {
     LocalPlayer = _G.GradientTabs and _G.GradientTabs.Movement or Window:AddTab({ Title = "Movement", Icon = "user" }),
     Protection = _G.GradientTabs and _G.GradientTabs.Protections or Window:AddTab({ Title = "Protections", Icon = "shield" }),
-    Settings = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "settings" })
+    Settings = _G.GradientTabs and _G.GradientTabs.Settings or Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
 -- ================================================================

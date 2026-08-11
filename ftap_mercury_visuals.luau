@@ -64,13 +64,13 @@ end
 -- Interface Tabs (mapped onto shared 4-tab layout)
 local Tabs = {
     PCLD = _G.GradientTabs and _G.GradientTabs.Protections or Window:AddTab({ Title = "Protections", Icon = "shield" }),
-    Players = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "user" }),
-    Objects = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "box" }),
-    Shaders = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "sun" }),
-    Blackhole = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "disc" }),
-    Sounds = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "volume-2" }),
-    Spectate = _G.GradientTabs and _G.GradientTabs.Combat or Window:AddTab({ Title = "Combat & Grabs", Icon = "eye" }),
-    Settings = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "settings" })
+    Players = _G.GradientTabs and _G.GradientTabs.Visuals or Window:AddTab({ Title = "Visuals", Icon = "user" }),
+    Objects = _G.GradientTabs and _G.GradientTabs.Visuals or Window:AddTab({ Title = "Visuals", Icon = "box" }),
+    Shaders = _G.GradientTabs and _G.GradientTabs.Visuals or Window:AddTab({ Title = "Visuals", Icon = "sun" }),
+    Blackhole = _G.GradientTabs and _G.GradientTabs.Visuals or Window:AddTab({ Title = "Visuals", Icon = "disc" }),
+    Sounds = _G.GradientTabs and _G.GradientTabs.Visuals or Window:AddTab({ Title = "Visuals", Icon = "volume-2" }),
+    Spectate = _G.GradientTabs and _G.GradientTabs.Combat or Window:AddTab({ Title = "Combat", Icon = "eye" }),
+    Settings = _G.GradientTabs and _G.GradientTabs.Settings or Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
 -- Throttle helper: runs heavy render work at most once per interval, wrapped in pcall
