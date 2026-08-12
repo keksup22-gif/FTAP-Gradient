@@ -921,8 +921,8 @@ local function hookAntiKickRemotes()
                     r.OnClientEvent:Connect(function(...)
                         if not AntiKick_Config.Enabled then return end
                         -- Swallow correction events that are used to kick/relocate.
+                        local args = { ... }
                         pcall(function()
-                            local args = { ... }
                             local first = tostring(args[1] or "")
                             local low = string.lower(first)
                             if string.find(low, "kick") or string.find(low, "ban")
