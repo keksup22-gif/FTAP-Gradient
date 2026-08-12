@@ -1766,10 +1766,10 @@ task.spawn(function()
                 if cache.Highlight then cache.Highlight.Enabled = false end
             end
         end
+    end
     end)
     end
 end)
-end
 
 Players.PlayerRemoving:Connect(removePlayerESP)
 
