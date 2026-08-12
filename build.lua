@@ -6216,28 +6216,25 @@ local function KickAll()
     local origin = root.Position
 
     for _, player in ipairs(Players:GetPlayers()) do
-        if player == LocalPlayer then goto continue_kick end
-        if Server_Config.Whitelisted[player.Name] then goto continue_kick end
+        if not (player == LocalPlayer or Server_Config.Whitelisted[player.Name]) then
+            local char = player.Character
+            local tRoot = char and char:FindFirstChild("HumanoidRootPart")
+            if tRoot then
+                local angle = math.random() * math.pi * 2
+                local radius = Server_Config.PlacementRadius
+                local x = origin.X + math.cos(angle) * radius
+                local z = origin.Z + math.sin(angle) * radius
+                local y = origin.Y + Server_Config.PlacementHeight
 
-        local char = player.Character
-        local tRoot = char and char:FindFirstChild("HumanoidRootPart")
-        if tRoot then
-            local angle = math.random() * math.pi * 2
-            local radius = Server_Config.PlacementRadius
-            local x = origin.X + math.cos(angle) * radius
-            local z = origin.Z + math.sin(angle) * radius
-            local y = origin.Y + Server_Config.PlacementHeight
-
-            pcall(function()
-                tRoot.CFrame = CFrame.new(x, y, z)
-                tRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                fireRemote("PlayerEvents", "RagdollPlayer")
-                fireRemote("CharacterEvents", "RagdollRemote")
-            end)
+                pcall(function()
+                    tRoot.CFrame = CFrame.new(x, y, z)
+                    tRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    fireRemote("PlayerEvents", "RagdollPlayer")
+                    fireRemote("CharacterEvents", "RagdollRemote")
+                end)
+            end
+            task.wait(math.max(0.1, 0.02))
         end
-        task.wait(math.max(0.1, 0.02))
-
-        ::continue_kick::
     end
 
     Fluent:Notify({ Title = "Kick All", Content = "Kick All executed! Players relocated.", Duration = 3 })
