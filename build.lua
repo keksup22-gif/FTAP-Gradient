@@ -336,9 +336,27 @@ function Layout.patch(window)
             lay.HorizontalAlignment = Enum.HorizontalAlignment.Left
             lay.VerticalAlignment = Enum.VerticalAlignment.Center
             lay.Padding = UDim.new(4, 0)
+
+            -- CanvasSize sync, guarded against re-entrancy: writing
+            -- CanvasSize inside an AbsoluteContentSizeChanged handler can
+            -- re-fire the SAME event in the same call stack and hit
+            -- "Maximum event re-entrancy depth exceeded". A lock flag plus
+            -- task.defer move the write to the next scheduler tick so the
+            -- event can never re-enter itself synchronously.
+            local syncingCanvas = false
             lay:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-                local ax = lay.AbsoluteContentSize and lay.AbsoluteContentSize.X or 0
-                holder.CanvasSize = UDim2.new(0, ax + 4, 0, 0)
+                if syncingCanvas then return end
+                syncingCanvas = true
+                task.defer(function()
+                    local okSync = pcall(function()
+                        if lay and holder then
+                            local ax = lay.AbsoluteContentSize and lay.AbsoluteContentSize.X or 0
+                            holder.CanvasSize = UDim2.new(0, ax + 4, 0, 0)
+                        end
+                    end)
+                    syncingCanvas = false
+                    return okSync
+                end)
             end)
             local ax0 = lay.AbsoluteContentSize and lay.AbsoluteContentSize.X or 0
             holder.CanvasSize = UDim2.new(0, ax0 + 4, 0, 0)
