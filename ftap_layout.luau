@@ -168,9 +168,11 @@ function Layout.patch(window)
             lay.VerticalAlignment = Enum.VerticalAlignment.Center
             lay.Padding = UDim.new(4, 0)
             lay:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-                holder.CanvasSize = UDim2.new(0, lay.AbsoluteContentSize.X + 4, 0, 0)
+                local ax = lay.AbsoluteContentSize and lay.AbsoluteContentSize.X or 0
+                holder.CanvasSize = UDim2.new(0, ax + 4, 0, 0)
             end)
-            holder.CanvasSize = UDim2.new(0, lay.AbsoluteContentSize.X + 4, 0, 0)
+            local ax0 = lay.AbsoluteContentSize and lay.AbsoluteContentSize.X or 0
+            holder.CanvasSize = UDim2.new(0, ax0 + 4, 0, 0)
         end
 
         -- 3) Accent underline (bottom of active tab)
@@ -213,12 +215,13 @@ function Layout.patch(window)
         -- 4) Override Fluent's animated motors so they respect the
         --    horizontal layout (our onStep callbacks run last).
         w.SelectorPosMotor:onStep(function()
-            positionUnderline()
+            pcall(positionUnderline)
         end)
         w.SelectorSizeMotor:onStep(function()
-            positionUnderline()
+            pcall(positionUnderline)
         end)
         w.ContainerPosMotor:onStep(function(K)
+            K = (type(K) == "number" and K) or 0
             w.ContainerHolder.Position = UDim2.fromOffset(12, K + 34)
         end)
         w.TabHolder:GetPropertyChangedSignal("CanvasPosition"):Connect(function()

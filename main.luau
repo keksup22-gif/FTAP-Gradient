@@ -55,6 +55,7 @@ local Window = Fluent:CreateWindow({
     Title = "Gradient Hub | FTAP",
     SubTitle = "by keksup22",
     Size = UDim2.fromOffset(880, 540),
+    TabWidth = 160,
     Acrylic = false,
     Theme = "Dark",
     MinimizeKey = Enum.KeyCode.LeftControl
