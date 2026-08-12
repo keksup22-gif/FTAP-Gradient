@@ -47,19 +47,59 @@ pcall(function()
     end
 end)
 
--- Load Fluent UI once
-local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+-- Load Fluent UI once (guarded: a rate-limit / network hiccup can make
+-- HttpGet return an HTML error page or an empty body, which makes
+-- loadstring return nil and the bare nil() call below throw
+-- "attempt to call a nil value").
+local Fluent
+do
+    local sources = {
+        "https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua",
+        "https://raw.githubusercontent.com/disco0001/Fluent/main/main.lua",
+    }
+    for _, url in ipairs(sources) do
+        local ok, lib = pcall(function()
+            local src = game:HttpGet(url)
+            if type(src) == "string" and #src > 100 then
+                local fn = loadstring(src)
+                if type(fn) == "function" then
+                    return fn()
+                end
+            end
+        end)
+        if ok and type(lib) == "table" and type(lib.CreateWindow) == "function" then
+            Fluent = lib
+            break
+        end
+        print("[Gradient] Fluent source failed: " .. tostring(url))
+    end
+end
+if type(Fluent) ~= "table" or type(Fluent.CreateWindow) ~= "function" then
+    print("[Gradient] CRITICAL: Fluent UI could not be loaded. Aborting launch.")
+    return
+end
 
--- Single shared window
-local Window = Fluent:CreateWindow({
-    Title = "Gradient Hub | FTAP",
-    SubTitle = "by keksup22",
-    Size = UDim2.fromOffset(880, 540),
-    TabWidth = 160,
-    Acrylic = false,
-    Theme = "Dark",
-    MinimizeKey = Enum.KeyCode.LeftControl
-})
+-- Single shared window (guard: CreateWindow may fail on executors that
+-- already have a Fluent instance or that block keybind handling).
+local Window
+do
+    local okW, win = pcall(Fluent.CreateWindow, Fluent, {
+        Title = "Gradient Hub | FTAP",
+        SubTitle = "by keksup22",
+        Size = UDim2.fromOffset(880, 540),
+        TabWidth = 160,
+        Acrylic = false,
+        Theme = "Dark",
+        MinimizeKey = Enum.KeyCode.LeftControl
+    })
+    if okW and type(win) == "table" and type(win.AddTab) == "function" then
+        Window = win
+    end
+end
+if type(Window) ~= "table" or type(Window.AddTab) ~= "function" then
+    print("[Gradient] CRITICAL: Fluent window creation failed. Aborting launch.")
+    return
+end
 
 _G.GradientFluent = Fluent
 _G.GradientWindow = Window

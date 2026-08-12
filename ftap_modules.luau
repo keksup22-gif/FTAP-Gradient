@@ -47,7 +47,7 @@ if not Fluent or not Window then
         end)
         return (ok2 and lib2) or error("[Gradient] Failed to load Fluent UI library.")
     end)()
-    Window = Fluent:CreateWindow({
+    local okW, win = pcall(Fluent.CreateWindow, Fluent, {
         Title = "Gradient Hub | FTAP",
         SubTitle = "by keksup22",
         TabWidth = 160,
@@ -56,8 +56,17 @@ if not Fluent or not Window then
         Theme = "Dark",
         MinimizeKey = Enum.KeyCode.LeftControl
     })
+    Window = (okW and type(win) == "table" and type(win.AddTab) == "function") and win or nil
+    if not Window then
+        print("[Gradient] Fallback window creation failed.")
+    end
     _G.GradientFluent = Fluent
     _G.GradientWindow = Window
+end
+
+if type(Fluent) ~= "table" or type(Window) ~= "table" or type(Window.AddTab) ~= "function" then
+    print("[Gradient] Skip module: Fluent UI unavailable")
+    return
 end
 
 -- Interface Tabs (mapped onto shared 4-tab layout)
