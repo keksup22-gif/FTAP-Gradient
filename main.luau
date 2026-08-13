@@ -146,6 +146,7 @@ local GradientInitStatus, GradientInitErr = pcall(function()
         if type(Fluent.GetIcon) == "function" then
             local okIcon, asset = pcall(Fluent.GetIcon, Fluent, spec.icon)
             if not (okIcon and type(asset) == "string") then
+                warn("[Tab Error]: GetIcon('" .. tostring(spec.icon) .. "') failed for tab '" .. spec.title .. "' (" .. tostring(asset) .. ") - creating without icon.")
                 safeIcon = nil
             end
         end
@@ -154,20 +155,57 @@ local GradientInitStatus, GradientInitErr = pcall(function()
         local ok1, t1 = pcall(Window.AddTab, Window, { Title = spec.title, Icon = safeIcon })
         if ok1 and type(t1) == "table" then
             tab = t1
+            print("[Gradient] Tab '" .. spec.title .. "' created OK.")
         else
+            warn("[Tab Error]: AddTab #1 failed for '" .. spec.title .. "': " .. tostring(t1))
             -- Attempt 2: retry strictly without Icon
             local ok2, t2 = pcall(Window.AddTab, Window, { Title = spec.title })
             if ok2 and type(t2) == "table" then
                 tab = t2
                 print("[Gradient] Tab '" .. spec.title .. "' added without icon (fallback).")
             else
-                print("[Gradient] WARN: Could not add tab '" .. spec.title .. "': " .. tostring(t1 or t2))
+                warn("[Tab Error]: AddTab #2 failed for '" .. spec.title .. "': " .. tostring(t2))
             end
         end
 
         if tab then
             Tabs[spec.key] = tab
             tabCount = tabCount + 1
+        end
+        -- Give Fluent one tick between creations so the tab bar layout
+        -- settles before the next AddTab (prevents mid-chain breakage).
+        task.wait(0.05)
+    end
+
+    -- ================================================================
+    -- Verification + retry pass: if any tab is still missing, re-scan
+    -- the TabHolder and retry creation of every missing spec.
+    -- ================================================================
+    local function countTabButtons(holder)
+        local n = 0
+        for _, child in ipairs(holder:GetChildren()) do
+            if child:IsA("TextButton") then
+                n = n + 1
+            end
+        end
+        return n
+    end
+
+    local holderRef = Window.TabHolder
+    local existingButtons = (holderRef and countTabButtons(holderRef)) or 0
+    print("[Gradient] TabHolder buttons after first pass: " .. tostring(existingButtons) .. " / " .. tostring(#tabSpecs))
+
+    for _, spec in ipairs(tabSpecs) do
+        if not Tabs[spec.key] and holderRef then
+            task.wait(0.1)
+            local okR, tR = pcall(Window.AddTab, Window, { Title = spec.title })
+            if okR and type(tR) == "table" then
+                Tabs[spec.key] = tR
+                tabCount = tabCount + 1
+                print("[Gradient] Retry pass: tab '" .. spec.title .. "' created.")
+            else
+                warn("[Tab Error]: Retry pass failed for '" .. spec.title .. "': " .. tostring(tR))
+            end
         end
     end
 

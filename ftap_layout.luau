@@ -193,14 +193,11 @@ function Layout.patch(window)
             holder.CanvasSize = UDim2.new(0, ax0 + 4, 0, 0)
         end
 
-        -- 3) Accent underline (bottom of active tab)
-        local underline
-        for _, child in ipairs(bar:GetChildren()) do
-            if child:IsA("Frame") then
-                underline = child
-                break
-            end
-        end
+        -- 3) Accent underline (bottom of active tab) - DEDICATED frame.
+        --    Never reuse Fluent's motor-driven selector (Fluent's
+        --    SelectorPosMotor/SelectorSizeMotor animate it every frame,
+        --    which caused size/position races and a broken top bar).
+        local underline = bar:FindFirstChild("GradientUnderline")
         if not underline then
             underline = Instance.new("Frame")
             underline.Name = "GradientUnderline"
@@ -230,14 +227,9 @@ function Layout.patch(window)
         underlineGrad.Parent = underline
         state.underline = underline
 
-        -- 4) Override Fluent's animated motors so they respect the
-        --    horizontal layout (our onStep callbacks run last).
-        w.SelectorPosMotor:onStep(function()
-            pcall(positionUnderline)
-        end)
-        w.SelectorSizeMotor:onStep(function()
-            pcall(positionUnderline)
-        end)
+        -- 4) Keep the content-area motor for our horizontal design, but stop
+        --    fighting Fluent's selector motors (they animate Fluent's own
+        --    selector frame every frame, not our underline).
         w.ContainerPosMotor:onStep(function(K)
             K = (type(K) == "number" and K) or 0
             w.ContainerHolder.Position = UDim2.fromOffset(12, K + 34)
@@ -253,6 +245,28 @@ function Layout.patch(window)
         holder.ChildAdded:Connect(function(child)
             if child:IsA("TextButton") then
                 styleTab(child)
+            end
+        end)
+
+        -- 5b) Layout watchdog: every 0.5s re-assert the horizontal
+        --     layout and restyle any tab button that lost its styling
+        --     (covers buttons added after patch / executor hiccups).
+        task.spawn(function()
+            while task.wait(0.5) do
+                pcall(function()
+                    local lay2 = holder:FindFirstChildOfClass("UIListLayout")
+                    if lay2 then
+                        lay2.FillDirection = Enum.FillDirection.Horizontal
+                        lay2.HorizontalAlignment = Enum.HorizontalAlignment.Left
+                        lay2.VerticalAlignment = Enum.VerticalAlignment.Center
+                        lay2.Padding = UDim.new(4, 0)
+                    end
+                    for _, btn2 in ipairs(getTabButtons(holder)) do
+                        if not btn2:FindFirstChild("GradientTabStroke") then
+                            styleTab(btn2)
+                        end
+                    end
+                end)
             end
         end)
 

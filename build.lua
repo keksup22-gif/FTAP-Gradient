@@ -1,6 +1,6 @@
 -- ================================================================
 -- GRADIENT HUB | FTAP - MONOLITHIC BUILD (generated, do not edit)
--- Generated: 2026-08-13 22:04:28
+-- Generated: 2026-08-13 22:15:09
 -- Source split: part1 (main.luau) + 11 inlined modules + tail
 -- ================================================================
 
@@ -152,6 +152,7 @@ local GradientInitStatus, GradientInitErr = pcall(function()
         if type(Fluent.GetIcon) == "function" then
             local okIcon, asset = pcall(Fluent.GetIcon, Fluent, spec.icon)
             if not (okIcon and type(asset) == "string") then
+                warn("[Tab Error]: GetIcon('" .. tostring(spec.icon) .. "') failed for tab '" .. spec.title .. "' (" .. tostring(asset) .. ") - creating without icon.")
                 safeIcon = nil
             end
         end
@@ -160,20 +161,57 @@ local GradientInitStatus, GradientInitErr = pcall(function()
         local ok1, t1 = pcall(Window.AddTab, Window, { Title = spec.title, Icon = safeIcon })
         if ok1 and type(t1) == "table" then
             tab = t1
+            print("[Gradient] Tab '" .. spec.title .. "' created OK.")
         else
+            warn("[Tab Error]: AddTab #1 failed for '" .. spec.title .. "': " .. tostring(t1))
             -- Attempt 2: retry strictly without Icon
             local ok2, t2 = pcall(Window.AddTab, Window, { Title = spec.title })
             if ok2 and type(t2) == "table" then
                 tab = t2
                 print("[Gradient] Tab '" .. spec.title .. "' added without icon (fallback).")
             else
-                print("[Gradient] WARN: Could not add tab '" .. spec.title .. "': " .. tostring(t1 or t2))
+                warn("[Tab Error]: AddTab #2 failed for '" .. spec.title .. "': " .. tostring(t2))
             end
         end
 
         if tab then
             Tabs[spec.key] = tab
             tabCount = tabCount + 1
+        end
+        -- Give Fluent one tick between creations so the tab bar layout
+        -- settles before the next AddTab (prevents mid-chain breakage).
+        task.wait(0.05)
+    end
+
+    -- ================================================================
+    -- Verification + retry pass: if any tab is still missing, re-scan
+    -- the TabHolder and retry creation of every missing spec.
+    -- ================================================================
+    local function countTabButtons(holder)
+        local n = 0
+        for _, child in ipairs(holder:GetChildren()) do
+            if child:IsA("TextButton") then
+                n = n + 1
+            end
+        end
+        return n
+    end
+
+    local holderRef = Window.TabHolder
+    local existingButtons = (holderRef and countTabButtons(holderRef)) or 0
+    print("[Gradient] TabHolder buttons after first pass: " .. tostring(existingButtons) .. " / " .. tostring(#tabSpecs))
+
+    for _, spec in ipairs(tabSpecs) do
+        if not Tabs[spec.key] and holderRef then
+            task.wait(0.1)
+            local okR, tR = pcall(Window.AddTab, Window, { Title = spec.title })
+            if okR and type(tR) == "table" then
+                Tabs[spec.key] = tR
+                tabCount = tabCount + 1
+                print("[Gradient] Retry pass: tab '" .. spec.title .. "' created.")
+            else
+                warn("[Tab Error]: Retry pass failed for '" .. spec.title .. "': " .. tostring(tR))
+            end
         end
     end
 
@@ -388,14 +426,11 @@ function Layout.patch(window)
             holder.CanvasSize = UDim2.new(0, ax0 + 4, 0, 0)
         end
 
-        -- 3) Accent underline (bottom of active tab)
-        local underline
-        for _, child in ipairs(bar:GetChildren()) do
-            if child:IsA("Frame") then
-                underline = child
-                break
-            end
-        end
+        -- 3) Accent underline (bottom of active tab) - DEDICATED frame.
+        --    Never reuse Fluent's motor-driven selector (Fluent's
+        --    SelectorPosMotor/SelectorSizeMotor animate it every frame,
+        --    which caused size/position races and a broken top bar).
+        local underline = bar:FindFirstChild("GradientUnderline")
         if not underline then
             underline = Instance.new("Frame")
             underline.Name = "GradientUnderline"
@@ -425,14 +460,9 @@ function Layout.patch(window)
         underlineGrad.Parent = underline
         state.underline = underline
 
-        -- 4) Override Fluent's animated motors so they respect the
-        --    horizontal layout (our onStep callbacks run last).
-        w.SelectorPosMotor:onStep(function()
-            pcall(positionUnderline)
-        end)
-        w.SelectorSizeMotor:onStep(function()
-            pcall(positionUnderline)
-        end)
+        -- 4) Keep the content-area motor for our horizontal design, but stop
+        --    fighting Fluent's selector motors (they animate Fluent's own
+        --    selector frame every frame, not our underline).
         w.ContainerPosMotor:onStep(function(K)
             K = (type(K) == "number" and K) or 0
             w.ContainerHolder.Position = UDim2.fromOffset(12, K + 34)
@@ -448,6 +478,28 @@ function Layout.patch(window)
         holder.ChildAdded:Connect(function(child)
             if child:IsA("TextButton") then
                 styleTab(child)
+            end
+        end)
+
+        -- 5b) Layout watchdog: every 0.5s re-assert the horizontal
+        --     layout and restyle any tab button that lost its styling
+        --     (covers buttons added after patch / executor hiccups).
+        task.spawn(function()
+            while task.wait(0.5) do
+                pcall(function()
+                    local lay2 = holder:FindFirstChildOfClass("UIListLayout")
+                    if lay2 then
+                        lay2.FillDirection = Enum.FillDirection.Horizontal
+                        lay2.HorizontalAlignment = Enum.HorizontalAlignment.Left
+                        lay2.VerticalAlignment = Enum.VerticalAlignment.Center
+                        lay2.Padding = UDim.new(4, 0)
+                    end
+                    for _, btn2 in ipairs(getTabButtons(holder)) do
+                        if not btn2:FindFirstChild("GradientTabStroke") then
+                            styleTab(btn2)
+                        end
+                    end
+                end)
             end
         end)
 
