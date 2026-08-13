@@ -149,6 +149,50 @@ local function getHumanoid()
     return char and char:FindFirstChildOfClass("Humanoid")
 end
 
+local function isBasePart(obj)
+    return obj and typeof(obj) == "Instance" and obj:IsA("BasePart")
+end
+
+local function safeSetLinearVelocity(part, velocity)
+    if not isBasePart(part) then return false end
+    if typeof(velocity) ~= "Vector3" then return false end
+    if part.Anchored then return false end
+    pcall(function()
+        part:SetNetworkOwner(LocalPlayer)
+        part.AssemblyLinearVelocity = velocity
+    end)
+    return true
+end
+
+local function safeSetAngularVelocity(part, velocity)
+    if not isBasePart(part) then return false end
+    if typeof(velocity) ~= "Vector3" then return false end
+    if part.Anchored then return false end
+    pcall(function()
+        part:SetNetworkOwner(LocalPlayer)
+        part.AssemblyAngularVelocity = velocity
+    end)
+    return true
+end
+
+local function safeSetCanCollide(part, value)
+    if not isBasePart(part) then return false end
+    pcall(function()
+        part.CanCollide = not not value
+    end)
+    return true
+end
+
+local function safeSetCFrame(part, cf)
+    if not isBasePart(part) then return false end
+    if typeof(cf) ~= "CFrame" then return false end
+    pcall(function()
+        part:SetNetworkOwner(LocalPlayer)
+        part.CFrame = cf
+    end)
+    return true
+end
+
 -- True while FTAP's RagdollPlayerCharacter / GrabbingScript control the body.
 -- While ragdolled we must NOT write CFrame, velocities or Humanoid params.
 local function isRagdolled()
@@ -295,9 +339,12 @@ end
 -- Kickback negation on throw (Super Strength helper)
 local function applySuperThrow()
     local root = getRoot()
-    if not root then return end
-    root.AssemblyLinearVelocity = root.AssemblyLinearVelocity * 0.1
-    root.RotVelocity = Vector3.new(0, 0, 0)
+    if not isBasePart(root) or root.Anchored then return end
+    local vel = root.AssemblyLinearVelocity
+    if typeof(vel) == "Vector3" then
+        safeSetLinearVelocity(root, vel * 0.1)
+    end
+    safeSetAngularVelocity(root, Vector3.new(0, 0, 0))
 end
 
 -- Infinite Line Distance: patch Mouse Raycast params while enabled
@@ -320,12 +367,12 @@ end
 -- Noclip Grab: keep grabbed part non-colliding
 local function applyNoclipGrab()
     if not Grabs_Config.NoclipGrab then return end
-    if HeldObject and HeldObject:IsA("BasePart") then
-        HeldObject.CanCollide = false
+    if isBasePart(HeldObject) then
+        safeSetCanCollide(HeldObject, false)
     elseif GrabbedPlayer and GrabbedPlayer.Character then
         for _, part in ipairs(GrabbedPlayer.Character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
+            if isBasePart(part) then
+                safeSetCanCollide(part, false)
             end
         end
     end
@@ -351,12 +398,12 @@ local function applyGrabDestroyMethod(heldObj)
     local method = Grabs_Config.GrabMethod
     local char = LocalPlayer.Character
     local root = getRoot()
-    if not root then return end
+    if not isBasePart(root) then return end
 
     if method == "Kick Grab" then
         -- Repeatedly reposition collision line on the held object
-        if heldObj and heldObj:IsA("BasePart") then
-            heldObj.CFrame = root.CFrame + Vector3.new(0, 2, 5)
+        if isBasePart(heldObj) then
+            safeSetCFrame(heldObj, root.CFrame + Vector3.new(0, 2, 5))
         end
 
     elseif method == "Lag Grab" then
@@ -364,26 +411,29 @@ local function applyGrabDestroyMethod(heldObj)
         if heldObjectIsPlayer(heldObj) and GrabbedPlayer and GrabbedPlayer.Character then
             local hum = GrabbedPlayer.Character:FindFirstChildOfClass("Humanoid")
             if hum then
-                hum.WalkSpeed = 0
+                pcall(function() hum.WalkSpeed = 0 end)
                 task.wait(0.05)
-                hum.WalkSpeed = 16
+                pcall(function() hum.WalkSpeed = 16 end)
             end
         end
 
     elseif method == "Fling Grab" then
         -- Spin / fling the held object
-        if heldObj and heldObj:IsA("BasePart") then
-            heldObj.AssemblyLinearVelocity = (root.CFrame.LookVector * 800) + Vector3.new(0, 300, 0)
-            heldObj.AssemblyAngularVelocity = Vector3.new(50, 50, 50)
+        if isBasePart(heldObj) then
+            local look = root.CFrame.LookVector
+            if typeof(look) == "Vector3" then
+                safeSetLinearVelocity(heldObj, (look * 800) + Vector3.new(0, 300, 0))
+            end
+            safeSetAngularVelocity(heldObj, Vector3.new(50, 50, 50))
         end
 
     elseif method == "Lock Grab" then
         -- Pin the grabbed player in place
         if GrabbedPlayer and GrabbedPlayer.Character then
             local tRoot = GrabbedPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if tRoot then
-                tRoot.CFrame = root.CFrame + Vector3.new(0, 2, 5)
-                tRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            if isBasePart(tRoot) then
+                safeSetCFrame(tRoot, root.CFrame + Vector3.new(0, 2, 5))
+                safeSetLinearVelocity(tRoot, Vector3.new(0, 0, 0))
             end
         end
     end

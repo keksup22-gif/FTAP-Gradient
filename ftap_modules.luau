@@ -128,6 +128,92 @@ local function getHumanoid()
     return char and char:FindFirstChildOfClass("Humanoid")
 end
 
+local function isBasePart(obj)
+    return obj and typeof(obj) == "Instance" and obj:IsA("BasePart")
+end
+
+local function safeSetLinearVelocity(part, velocity)
+    if not isBasePart(part) then return false end
+    if typeof(velocity) ~= "Vector3" then return false end
+    if part.Anchored then return false end
+    pcall(function()
+        part.AssemblyLinearVelocity = velocity
+    end)
+    return true
+end
+
+local function safeSetAngularVelocity(part, velocity)
+    if not isBasePart(part) then return false end
+    if typeof(velocity) ~= "Vector3" then return false end
+    if part.Anchored then return false end
+    pcall(function()
+        part.AssemblyAngularVelocity = velocity
+    end)
+    return true
+end
+
+local function safeSetCanCollide(part, value)
+    if not isBasePart(part) then return false end
+    pcall(function()
+        part.CanCollide = not not value
+    end)
+    return true
+end
+
+local function safeSetAnchored(part, value)
+    if not isBasePart(part) then return false end
+    pcall(function()
+        part.Anchored = not not value
+    end)
+    return true
+end
+
+local function safeRequestNetworkOwnership(part)
+    if not isBasePart(part) then return false end
+    if part.Anchored then return false end
+    local ok = pcall(function()
+        part:SetNetworkOwner(LocalPlayer)
+    end)
+    return ok
+end
+
+local function safeReturnNetworkOwnership(part)
+    if not isBasePart(part) then return false end
+    if part.Anchored then return false end
+    local ok = pcall(function()
+        part:SetNetworkOwner(nil)
+    end)
+    return ok
+end
+
+local function safeGetAttachment0(inst)
+    if not inst or not inst.Parent or not isBasePart(inst.Parent) then return nil end
+    local att = inst:FindFirstChildOfClass("Attachment")
+    if not att then
+        att = Instance.new("Attachment")
+        att.Name = "PhysicsHelperAttachment"
+        att.Parent = inst.Parent
+    end
+    return att
+end
+
+local function ensureAttachments(part)
+    if not isBasePart(part) then return nil, nil end
+    local att0 = part:FindFirstChild("PhysicsAlignAtt0")
+    if not att0 then
+        att0 = Instance.new("Attachment")
+        att0.Name = "PhysicsAlignAtt0"
+        att0.Parent = part
+    end
+    local att1 = part:FindFirstChild("PhysicsAlignAtt1")
+    if not att1 then
+        att1 = Instance.new("Attachment")
+        att1.Name = "PhysicsAlignAtt1"
+        att1.Parent = part
+    end
+    return att0, att1
+end
+
 -- True while FTAP's RagdollPlayerCharacter / GrabbingScript control the body.
 -- While ragdolled we must NOT write CFrame, velocities or Humanoid params.
 local function isRagdolled()
@@ -231,18 +317,20 @@ task.spawn(function()
             if not LP_Config.LockedCFrame then
                 LP_Config.LockedCFrame = root.CFrame
             end
-            root.CFrame = LP_Config.LockedCFrame
+            if isBasePart(root) then
+                root.CFrame = LP_Config.LockedCFrame
+            end
         else
             LP_Config.LockedCFrame = nil
         end
 
         -- Desync (Velocity / CFrame Packet Spoofing) - never while ragdolled
-        if LP_Config.Desync and not isRagdolled() then
+        if LP_Config.Desync and not isRagdolled() and isBasePart(root) and not root.Anchored then
             local oldVelocity = root.AssemblyLinearVelocity
-            root.AssemblyLinearVelocity = Vector3.new(0, -1000, 0)
+            safeSetLinearVelocity(root, Vector3.new(0, -1000, 0))
             RunService.RenderStepped:Wait()
-            if root then
-                root.AssemblyLinearVelocity = oldVelocity
+            if isBasePart(root) then
+                safeSetLinearVelocity(root, oldVelocity)
             end
         end
     end)
@@ -254,7 +342,7 @@ UserInputService.JumpRequest:Connect(function()
     if LP_Config.InfiniteJump and not isRagdolled() then
         local hum = getHumanoid()
         if hum then
-            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+            pcall(function() hum:ChangeState(Enum.HumanoidStateType.Jumping) end)
         end
     end
 end)
@@ -276,15 +364,15 @@ task.spawn(function()
         -- Noclip
         if LP_Config.Noclip then
             for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") and part.CanCollide then
-                    part.CanCollide = false
+                if isBasePart(part) and part.CanCollide then
+                    safeSetCanCollide(part, false)
                 end
             end
         end
 
         -- Speed Control (never force WalkSpeed while ragdolled by FTAP)
         if LP_Config.EnableSpeed and not isRagdolled() then
-            hum.WalkSpeed = LP_Config.SpeedControl
+            pcall(function() hum.WalkSpeed = LP_Config.SpeedControl end)
         end
 
         -- Jump Power / Height (only when user explicitly enables it AND the
@@ -292,8 +380,10 @@ task.spawn(function()
         -- While disabled we never write Humanoid params, so the game's own
         -- custom jump physics (TouchJump / RagdollPlayerCharacter) stay intact.
         if LP_Config.EnableJumpPower and not isRagdolled() then
-            hum.UseJumpPower = true
-            hum.JumpPower = LP_Config.JumpPower
+            pcall(function()
+                hum.UseJumpPower = true
+                hum.JumpPower = LP_Config.JumpPower
+            end)
         end
 
         -- Water Walk Platform Logic
@@ -302,14 +392,16 @@ task.spawn(function()
                 WaterPlatform = Instance.new("Part")
                 WaterPlatform.Name = "FTAP_WaterPlatform"
                 WaterPlatform.Size = Vector3.new(12, 1, 12)
-                WaterPlatform.Anchored = true
+                safeSetAnchored(WaterPlatform, true)
                 WaterPlatform.Transparency = 1
+                WaterPlatform.CanCollide = true
+                WaterPlatform.CastShadow = false
                 WaterPlatform.Parent = Workspace
             end
             WaterPlatform.CFrame = CFrame.new(root.Position.X, 2.5, root.Position.Z)
         else
             if WaterPlatform then
-                WaterPlatform:Destroy()
+                pcall(function() WaterPlatform:Destroy() end)
                 WaterPlatform = nil
             end
         end
@@ -323,8 +415,8 @@ task.spawn(function()
         if LP_Config.LoopTeleport then
             local targetPos = TeleportLocations[LP_Config.TeleportLocation]
             local root = getRoot()
-            if targetPos and root and not isRagdolled() then
-                root.CFrame = CFrame.new(targetPos)
+            if targetPos and root and isBasePart(root) and not isRagdolled() then
+                pcall(function() root.CFrame = CFrame.new(targetPos) end)
             end
         end
     end
@@ -334,39 +426,58 @@ end)
 local function teleportToMouse()
     local mouse = LocalPlayer:GetMouse()
     local root = getRoot()
-    if mouse and mouse.Hit and root and not isRagdolled() then
-        root.CFrame = CFrame.new(mouse.Hit.Position + Vector3.new(0, 3, 0))
+    if mouse and mouse.Hit and root and isBasePart(root) and not isRagdolled() then
+        pcall(function() root.CFrame = CFrame.new(mouse.Hit.Position + Vector3.new(0, 3, 0)) end)
         Fluent:Notify({ Title = "Teleport", Content = "Teleported to mouse position!", Duration = 2 })
     end
 end
 
--- Vehicle / Player Fly System
-local BodyGyro, BodyVelocity
+-- Vehicle / Player Fly System (modernized: AlignOrientation + LinearVelocity)
+local FlyAlignOrientation, FlyLinearVelocity
+local FlyAtt0, FlyAtt1
 local flyRenderTick = makeThrottled(0.1)
 task.spawn(function()
     while true do
         task.wait(0.1)
         flyRenderTick(function()
         local root = getRoot()
-        if not root then return end
+        if not root or not isBasePart(root) then return end
 
-        if LP_Config.VehicleFly and not isRagdolled() then
-            if not BodyGyro or not BodyGyro.Parent then
-                BodyGyro = Instance.new("BodyGyro")
-                BodyGyro.P = 9e4
-                BodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-                BodyGyro.CFrame = root.CFrame
-                BodyGyro.Parent = root
+        if LP_Config.VehicleFly and not isRagdolled() and not root.Anchored then
+            -- Ensure attachments exist for modern constraints
+            if not FlyAtt0 or not FlyAtt0.Parent then
+                FlyAtt0, FlyAtt1 = ensureAttachments(root)
             end
 
-            if not BodyVelocity or not BodyVelocity.Parent then
-                BodyVelocity = Instance.new("BodyVelocity")
-                BodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-                BodyVelocity.Velocity = Vector3.new(0, 0, 0)
-                BodyVelocity.Parent = root
+            -- Modern AlignOrientation (replaces BodyGyro)
+            if not FlyAlignOrientation or not FlyAlignOrientation.Parent then
+                FlyAlignOrientation = Instance.new("AlignOrientation")
+                FlyAlignOrientation.Name = "FTAP_FlyAlignOrientation"
+                FlyAlignOrientation.Mode = Enum.OrientationAlignmentMode.OneAttachment
+                FlyAlignOrientation.Attachment0 = FlyAtt0
+                FlyAlignOrientation.MaxTorque = 9e9
+                FlyAlignOrientation.Responsiveness = 200
+                FlyAlignOrientation.RigidityEnabled = false
+                FlyAlignOrientation.CFrame = root.CFrame
+                FlyAlignOrientation.Parent = root
             end
 
-            BodyGyro.CFrame = Camera.CFrame
+            -- Modern LinearVelocity (replaces BodyVelocity)
+            if not FlyLinearVelocity or not FlyLinearVelocity.Parent then
+                FlyLinearVelocity = Instance.new("LinearVelocity")
+                FlyLinearVelocity.Name = "FTAP_FlyLinearVelocity"
+                FlyLinearVelocity.VelocityRelativeTo = Enum.ActuatorRelativeTo.World
+                FlyLinearVelocity.Attachment0 = FlyAtt0
+                FlyLinearVelocity.MaxForce = 9e9
+                FlyLinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+                FlyLinearVelocity.Parent = root
+            end
+
+            -- Update orientation to match camera
+            if FlyAlignOrientation and FlyAtt0 then
+                FlyAlignOrientation.CFrame = Camera.CFrame
+            end
+
             local moveDir = Vector3.new()
 
             if UserInputService:IsKeyDown(Enum.KeyCode.W) then
@@ -388,10 +499,31 @@ task.spawn(function()
                 moveDir = moveDir - Vector3.new(0, 1, 0)
             end
 
-            BodyVelocity.Velocity = moveDir * (LP_Config.FlySpeed * 10)
+            if FlyLinearVelocity then
+                if moveDir.Magnitude > 0.001 then
+                    FlyLinearVelocity.VectorVelocity = moveDir.Unit * (LP_Config.FlySpeed * 10)
+                else
+                    FlyLinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+                end
+            end
         else
-            if BodyGyro then BodyGyro:Destroy() BodyGyro = nil end
-            if BodyVelocity then BodyVelocity:Destroy() BodyVelocity = nil end
+            -- Cleanup modern constraints when fly is off
+            if FlyAlignOrientation then
+                pcall(function() FlyAlignOrientation:Destroy() end)
+                FlyAlignOrientation = nil
+            end
+            if FlyLinearVelocity then
+                pcall(function() FlyLinearVelocity:Destroy() end)
+                FlyLinearVelocity = nil
+            end
+            if FlyAtt0 then
+                pcall(function() FlyAtt0:Destroy() end)
+                FlyAtt0 = nil
+            end
+            if FlyAtt1 then
+                pcall(function() FlyAtt1:Destroy() end)
+                FlyAtt1 = nil
+            end
         end
     end)
     end
@@ -791,34 +923,37 @@ task.spawn(function()
         -- (separate loop below) is the only fallback — never every tick.
         -- Anti Ragdoll
         if Prot_Config.AntiRagdoll and hum then
-            hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-            if hum:GetState() == Enum.HumanoidStateType.Ragdoll or hum:GetState() == Enum.HumanoidStateType.FallingDown then
-                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-            end
+            pcall(function()
+                hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+                hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+                if hum:GetState() == Enum.HumanoidStateType.Ragdoll or hum:GetState() == Enum.HumanoidStateType.FallingDown then
+                    hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                end
+            end)
         end
 
         -- Anti Explode Physics Fix (only when WE own the physics; never
         -- writes velocity while FTAP's RagdollPlayerCharacter is active)
-        if Prot_Config.AntiExplode and not isRagdolled() then
-            root.RotVelocity = Vector3.new(0, 0, 0)
-            if root.AssemblyLinearVelocity.Magnitude > 250 then
-                root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        if Prot_Config.AntiExplode and not isRagdolled() and isBasePart(root) and not root.Anchored then
+            safeSetAngularVelocity(root, Vector3.new(0, 0, 0))
+            local vel = root.AssemblyLinearVelocity
+            if typeof(vel) == "Vector3" and vel.Magnitude > 250 then
+                safeSetLinearVelocity(root, Vector3.new(0, 0, 0))
             end
         end
 
         -- Anti Void Teleport (restore ONLY if we truly fell below the void
         -- line AND the body is not ragdolled by another player / RagdollPC)
-        if Prot_Config.AntiVoid and not isRagdolled() and root.Position.Y < Prot_Config.VoidThreshold then
-            root.CFrame = CFrame.new(TeleportLocations["Spawn"])
+        if Prot_Config.AntiVoid and not isRagdolled() and isBasePart(root) and root.Position.Y < Prot_Config.VoidThreshold then
+            pcall(function() root.CFrame = CFrame.new(TeleportLocations["Spawn"]) end)
             Fluent:Notify({ Title = "Anti Void", Content = "Saved from falling into the void!", Duration = 3 })
         end
 
         -- Anti Sticky Self
         if Prot_Config.AntiStickySelf then
             for _, obj in ipairs(char:GetChildren()) do
-                if obj:IsA("TouchTransporter") or (obj:IsA("BasePart") and obj.Name == "StickyPart") then
-                    obj:Destroy()
+                if obj:IsA("TouchTransporter") or (isBasePart(obj) and obj.Name == "StickyPart") then
+                    pcall(function() obj:Destroy() end)
                 end
             end
         end
@@ -830,10 +965,11 @@ task.spawn(function()
                 antiBlobSitLastScan = now
                 pcall(function()
                     for _, inst in ipairs(Workspace:GetDescendants()) do
-                        if string.find(string.lower(inst.Name), "blob") and inst:IsA("BasePart") then
+                        if string.find(string.lower(inst.Name), "blob") and isBasePart(inst) then
                             local dist = (root.Position - inst.Position).Magnitude
                             if dist < 8 then
-                                inst.Velocity = (inst.Position - root.Position).Unit * 100
+                                safeRequestNetworkOwnership(inst)
+                                safeSetLinearVelocity(inst, (inst.Position - root.Position).Unit * 100)
                             end
                         end
                     end
@@ -916,8 +1052,9 @@ task.spawn(function()
                 barrierScanCooldown = now
                 for _, inst in ipairs(Workspace:GetDescendants()) do
                     if string.find(string.lower(inst.Name), "barrier") or string.find(string.lower(inst.Name), "plotborder") then
-                        if inst:IsA("BasePart") then
-                            inst.CanCollide = false
+                        if isBasePart(inst) then
+                            safeRequestNetworkOwnership(inst)
+                            safeSetCanCollide(inst, false)
                         end
                     end
                 end
@@ -940,7 +1077,7 @@ task.spawn(function()
         if Prot_Config.AntiBurn then
             for _, child in ipairs(char:GetDescendants()) do
                 if child:IsA("Fire") or child:IsA("Smoke") or child.Name == "BurnTag" then
-                    child:Destroy()
+                    pcall(function() child:Destroy() end)
                 end
             end
         end
@@ -949,7 +1086,7 @@ task.spawn(function()
             for _, child in ipairs(char:GetDescendants()) do
                 if child:IsA("Decal") or child:IsA("Texture") then
                     if child.Name == "PaintDecal" or string.find(string.lower(child.Name), "paint") then
-                        child:Destroy()
+                        pcall(function() child:Destroy() end)
                     end
                 end
             end
@@ -973,8 +1110,14 @@ task.spawn(function()
                     if string.find(string.lower(inst.Name), "blob") and inst:IsA("Model") then
                         local lArm = inst:FindFirstChild("LeftArm") or inst:FindFirstChild("Left UpperArm")
                         local rArm = inst:FindFirstChild("RightArm") or inst:FindFirstChild("Right UpperArm")
-                        if lArm and lArm:IsA("BasePart") then lArm.CanCollide = false end
-                        if rArm and rArm:IsA("BasePart") then rArm.CanCollide = false end
+                        if isBasePart(lArm) then
+                            safeRequestNetworkOwnership(lArm)
+                            safeSetCanCollide(lArm, false)
+                        end
+                        if isBasePart(rArm) then
+                            safeRequestNetworkOwnership(rArm)
+                            safeSetCanCollide(rArm, false)
+                        end
                     end
                 end
             end
@@ -990,7 +1133,7 @@ task.spawn(function()
             for _, inst in ipairs(Workspace:GetDescendants()) do
                 local name = string.lower(inst.Name)
                 if string.find(name, "pcld") or string.find(name, "antifling") then
-                    if inst:IsA("BasePart") or inst:IsA("Model") then
+                    if isBasePart(inst) or inst:IsA("Model") then
                         pcall(function() inst:Destroy() end)
                     end
                 end
@@ -1009,17 +1152,18 @@ task.spawn(function()
         if Prot_Config.AntiFling then
             pcall(function()
                 local root = getRoot()
-                if not root or isRagdolled() then return end
+                if not root or not isBasePart(root) or isRagdolled() then return end
                 local vel = root.AssemblyLinearVelocity
+                if typeof(vel) ~= "Vector3" then return end
                 if vel.Magnitude < Prot_Config.FlingSpeedThreshold then
                     antiFlingSafeCFrame = root.CFrame
                 elseif antiFlingSafeCFrame then
                     local hum = getHumanoid()
                     root.CFrame = antiFlingSafeCFrame
-                    root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                    root.RotVelocity = Vector3.new(0, 0, 0)
+                    safeSetLinearVelocity(root, Vector3.new(0, 0, 0))
+                    safeSetAngularVelocity(root, Vector3.new(0, 0, 0))
                     if hum then
-                        hum:ChangeState(Enum.HumanoidStateType.Running)
+                        pcall(function() hum:ChangeState(Enum.HumanoidStateType.Running) end)
                     end
                 end
             end)
@@ -1027,9 +1171,11 @@ task.spawn(function()
     end
 end)
 
--- 9. Anti Network Ownership - periodically returns network ownership of our
--- parts to the server (SetNetworkOwner(nil)) so attackers can't keep holding
--- our parts to fling us. Throttled to 0.5s.
+-- 9. Anti Network Ownership - intelligently manages network ownership:
+--   * Keeps OUR parts owned by server (SetNetworkOwner(nil)) to prevent
+--     attackers from holding our parts to fling us
+--   * Only touches non-anchored BaseParts, wrapped in pcall
+--   * Skips if grabbing someone (grabbed parts must stay under our ownership)
 local antiNetOwnerTick = makeThrottled(0.5)
 task.spawn(function()
     while true do
@@ -1039,8 +1185,8 @@ task.spawn(function()
                 local char = LocalPlayer.Character
                 if not char then return end
                 for _, part in ipairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        pcall(function() part:SetNetworkOwner(nil) end)
+                    if isBasePart(part) and not part.Anchored then
+                        safeReturnNetworkOwnership(part)
                     end
                 end
             end

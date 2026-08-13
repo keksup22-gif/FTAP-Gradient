@@ -124,6 +124,21 @@ local function getHumanoid()
     return char and char:FindFirstChildOfClass("Humanoid")
 end
 
+local function isBasePart(obj)
+    return obj and typeof(obj) == "Instance" and obj:IsA("BasePart")
+end
+
+local function safeSetLinearVelocity(part, velocity)
+    if not isBasePart(part) then return false end
+    if typeof(velocity) ~= "Vector3" then return false end
+    if part.Anchored then return false end
+    pcall(function()
+        part:SetNetworkOwner(LocalPlayer)
+        part.AssemblyLinearVelocity = velocity
+    end)
+    return true
+end
+
 local LimbOptions = {"Torso", "Head", "Left Arm", "Right Arm", "Left Leg", "Right Leg"}
 
 
@@ -510,7 +525,7 @@ end
 local function applyMagnetAura()
     local char = LocalPlayer.Character
     local root = getRoot()
-    if not char or not root then return end
+    if not char or not isBasePart(root) then return end
     -- Purple vortex — pull nearby parts toward the player
     -- Heavy GetDescendants sweep is throttled to at most 1x/s
     local now = os.clock()
@@ -518,12 +533,10 @@ local function applyMagnetAura()
     AuraMagnetLastScan = now
     pcall(function()
         for _, inst in ipairs(Workspace:GetDescendants()) do
-            if inst:IsA("BasePart") and inst:IsDescendantOf(char) == false and inst.Anchored == false then
+            if isBasePart(inst) and inst:IsDescendantOf(char) == false and inst.Anchored == false then
                 local dist = (inst.Position - root.Position).Magnitude
-                if dist < 40 then
-                    pcall(function()
-                        inst.AssemblyLinearVelocity = (root.Position - inst.Position).Unit * 60
-                    end)
+                if dist < 40 and dist > 0.001 then
+                    safeSetLinearVelocity(inst, (root.Position - inst.Position).Unit * 60)
                 end
             end
         end

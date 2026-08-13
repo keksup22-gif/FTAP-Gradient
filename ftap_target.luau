@@ -124,6 +124,50 @@ local function getHumanoid()
     return char and char:FindFirstChildOfClass("Humanoid")
 end
 
+local function isBasePart(obj)
+    return obj and typeof(obj) == "Instance" and obj:IsA("BasePart")
+end
+
+local function safeSetLinearVelocity(part, velocity)
+    if not isBasePart(part) then return false end
+    if typeof(velocity) ~= "Vector3" then return false end
+    if part.Anchored then return false end
+    pcall(function()
+        part:SetNetworkOwner(LocalPlayer)
+        part.AssemblyLinearVelocity = velocity
+    end)
+    return true
+end
+
+local function safeSetAngularVelocity(part, velocity)
+    if not isBasePart(part) then return false end
+    if typeof(velocity) ~= "Vector3" then return false end
+    if part.Anchored then return false end
+    pcall(function()
+        part:SetNetworkOwner(LocalPlayer)
+        part.AssemblyAngularVelocity = velocity
+    end)
+    return true
+end
+
+local function safeSetCFrame(part, cf)
+    if not isBasePart(part) then return false end
+    if typeof(cf) ~= "CFrame" then return false end
+    pcall(function()
+        part:SetNetworkOwner(LocalPlayer)
+        part.CFrame = cf
+    end)
+    return true
+end
+
+local function isRagdolled(hum)
+    if not hum then return false end
+    local st = hum:GetState()
+    return st == Enum.HumanoidStateType.Ragdoll
+        or st == Enum.HumanoidStateType.FallingDown
+        or hum.Sit == true
+end
+
 local function getTargetRoot()
     if not Target_Config.SelectedPlayer then return nil end
     if Target_Config.SelectedPlayer == LocalPlayer then return nil end
@@ -376,7 +420,7 @@ local function getAttackCFrame(tRoot)
 end
 
 local function applyDestroyMethod(targetRoot, targetHum)
-    if not targetRoot then return end
+    if not isBasePart(targetRoot) then return end
     if Target_Config.SelectedPlayer == LocalPlayer then return end
     pcall(function()
         local method = Target_Config.DestroyMethod
@@ -384,32 +428,35 @@ local function applyDestroyMethod(targetRoot, targetHum)
         -- KICK: see-saw positioning & constant line pressure
         if method == "Kick" then
             local myRoot = getRoot()
-            if myRoot then
-                targetRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            if isBasePart(myRoot) then
+                safeSetLinearVelocity(targetRoot, Vector3.new(0, 0, 0))
                 fireRemote("CharacterEvents", "RagdollRemote")
                 fireRemote("PlayerEvents", "RagdollPlayer")
                 task.wait(Target_Config.DestroyLineDelay)
-                myRoot.CFrame = CFrame.lookAt(myRoot.Position, targetRoot.Position)
+                safeSetCFrame(myRoot, CFrame.lookAt(myRoot.Position, targetRoot.Position))
             end
         end
 
         -- LAG: spam slow-motion / teleport jitter
         if method == "Lag" then
             if targetHum then
-                targetHum.WalkSpeed = 3
+                pcall(function() targetHum.WalkSpeed = 3 end)
                 task.wait()
-                targetHum.WalkSpeed = 0
+                pcall(function() targetHum.WalkSpeed = 0 end)
             end
             task.wait()
-            if targetHum then targetHum.WalkSpeed = 3 end
+            if targetHum then pcall(function() targetHum.WalkSpeed = 3 end) end
         end
 
         -- KILL: velocity deflection toward void / instakill damage
         if method == "Kill" then
-            if targetRoot then
+            if isBasePart(targetRoot) then
                 local myRoot = getRoot()
-                if myRoot then
-                    targetRoot.AssemblyLinearVelocity = CFrame.new(myRoot.Position, targetRoot.Position).LookVector * 500 + Vector3.new(0, 150, 0)
+                if isBasePart(myRoot) then
+                    local dir = CFrame.new(myRoot.Position, targetRoot.Position).LookVector
+                    if typeof(dir) == "Vector3" then
+                        safeSetLinearVelocity(targetRoot, dir * 500 + Vector3.new(0, 150, 0))
+                    end
                 end
                 fireRemote("GameCorrectionEvents", "StopAllVelocity")
             end
@@ -418,20 +465,22 @@ local function applyDestroyMethod(targetRoot, targetHum)
         -- LOCK: pin target position
         if method == "Lock" then
             local lockedPos = getAttackCFrame(targetRoot) + Vector3.new(0, -Target_Config.YOffset, 0)
-            targetRoot.CFrame = lockedPos
-            targetRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-            targetRoot.RotVelocity = Vector3.new(0, 0, 0)
+            if typeof(lockedPos) == "CFrame" then
+                safeSetCFrame(targetRoot, lockedPos)
+            end
+            safeSetLinearVelocity(targetRoot, Vector3.new(0, 0, 0))
+            safeSetAngularVelocity(targetRoot, Vector3.new(0, 0, 0))
             if targetHum then
-                targetHum:ChangeState(Enum.HumanoidStateType.Frozen)
+                pcall(function() targetHum:ChangeState(Enum.HumanoidStateType.Frozen) end)
             end
             fireRemote("CharacterEvents", "RagdollRemote")
         end
 
         -- TELEPORT-AWAY: fling target into the void
         if method == "Fling Void" then
-            if targetRoot then
-                targetRoot.CFrame = CFrame.new(0, -250, 0)
-                targetRoot.AssemblyLinearVelocity = Vector3.new(0, -300, 0)
+            if isBasePart(targetRoot) then
+                safeSetCFrame(targetRoot, CFrame.new(0, -250, 0))
+                safeSetLinearVelocity(targetRoot, Vector3.new(0, -300, 0))
                 fireRemote("GameCorrectionEvents", "TeleportToGround")
             end
         end
@@ -588,37 +637,43 @@ local function applyLoopMethod(plr)
     local char = plr.Character
     if not char then return end
     local tRoot = char:FindFirstChild("HumanoidRootPart")
-    if not tRoot then return end
+    if not isBasePart(tRoot) then return end
     local method = Target_Config.LoopTargetMode
 
     -- KICK: ragdoll + see-saw line pressure
     if method == "Kick" then
         local myRoot = getRoot()
-        if myRoot then
-            tRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        if isBasePart(myRoot) then
+            safeSetLinearVelocity(tRoot, Vector3.new(0, 0, 0))
             fireRemote("CharacterEvents", "RagdollRemote")
             fireRemote("PlayerEvents", "RagdollPlayer")
             task.wait(0.01)
-            myRoot.CFrame = CFrame.lookAt(myRoot.Position, tRoot.Position)
+            safeSetCFrame(myRoot, CFrame.lookAt(myRoot.Position, tRoot.Position))
         end
     -- KILL: velocity deflection toward the void
     elseif method == "Kill" then
         local myRoot = getRoot()
-        if myRoot then
-            tRoot.AssemblyLinearVelocity = CFrame.new(myRoot.Position, tRoot.Position).LookVector * 500 + Vector3.new(0, 150, 0)
+        if isBasePart(myRoot) then
+            local dir = CFrame.new(myRoot.Position, tRoot.Position).LookVector
+            if typeof(dir) == "Vector3" then
+                safeSetLinearVelocity(tRoot, dir * 500 + Vector3.new(0, 150, 0))
+            end
         end
         fireRemote("GameCorrectionEvents", "StopAllVelocity")
     -- VOID: teleport target into the void
     elseif method == "Void" then
-        tRoot.CFrame = CFrame.new(0, -250, 0)
-        tRoot.AssemblyLinearVelocity = Vector3.new(0, -300, 0)
+        safeSetCFrame(tRoot, CFrame.new(0, -250, 0))
+        safeSetLinearVelocity(tRoot, Vector3.new(0, -300, 0))
         fireRemote("GameCorrectionEvents", "TeleportToGround")
     -- FLING: ragdoll + launch away from us
     elseif method == "Fling" then
         local myRoot = getRoot()
-        if myRoot then
-            local dir = (tRoot.Position - myRoot.Position).Unit
-            tRoot.AssemblyLinearVelocity = dir * 350 + Vector3.new(0, 200, 0)
+        if isBasePart(myRoot) then
+            local diff = tRoot.Position - myRoot.Position
+            if typeof(diff) == "Vector3" and diff.Magnitude > 0.001 then
+                local dir = diff.Unit
+                safeSetLinearVelocity(tRoot, dir * 350 + Vector3.new(0, 200, 0))
+            end
             fireRemote("CharacterEvents", "RagdollRemote")
             fireRemote("PlayerEvents", "RagdollPlayer")
         end

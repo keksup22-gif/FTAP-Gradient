@@ -127,6 +127,38 @@ local function getHumanoid()
     return char and char:FindFirstChildOfClass("Humanoid")
 end
 
+local function isBasePart(obj)
+    return obj and typeof(obj) == "Instance" and obj:IsA("BasePart")
+end
+
+local function safeSetLinearVelocity(part, velocity)
+    if not isBasePart(part) then return false end
+    if typeof(velocity) ~= "Vector3" then return false end
+    if part.Anchored then return false end
+    pcall(function()
+        part:SetNetworkOwner(LocalPlayer)
+        part.AssemblyLinearVelocity = velocity
+    end)
+    return true
+end
+
+local function safeSetCanCollide(part, value)
+    if not isBasePart(part) then return false end
+    if type(value) ~= "boolean" then return false end
+    pcall(function() part.CanCollide = value end)
+    return true
+end
+
+local function safeSetCFrame(part, cf)
+    if not isBasePart(part) then return false end
+    if typeof(cf) ~= "CFrame" then return false end
+    pcall(function()
+        part:SetNetworkOwner(LocalPlayer)
+        part.CFrame = cf
+    end)
+    return true
+end
+
 
 -- ================================================================
 -- SERVER MODULE CONFIG & STATE
@@ -285,9 +317,9 @@ local function applyLineLagMode()
         end
     elseif mode == "Mass lag" then
         for _, inst in ipairs(Workspace:GetDescendants()) do
-            if inst:IsA("BasePart") and inst:IsDescendantOf(Workspace.CurrentCamera) == false then
+            if isBasePart(inst) and inst:IsDescendantOf(Workspace.CurrentCamera) == false then
                 if inst.Anchored == false then
-                    inst.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    safeSetLinearVelocity(inst, Vector3.new(0, 0, 0))
                 end
             end
         end
@@ -328,13 +360,13 @@ local function applyCollideBreaker()
     local targets = findBreakerTargets(Server_Config.BreakerObject)
     local count = 0
     for _, inst in ipairs(targets) do
-        if inst:IsA("BasePart") then
-            inst.CanCollide = false
+        if isBasePart(inst) then
+            safeSetCanCollide(inst, false)
             count = count + 1
         elseif inst:IsA("Model") then
             for _, part in ipairs(inst:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = false
+                if isBasePart(part) then
+                    safeSetCanCollide(part, false)
                     count = count + 1
                 end
             end
@@ -350,7 +382,7 @@ local function applyDebrisBreaker()
     if not root then return 0 end
     local count = 0
     for _, inst in ipairs(Workspace:GetDescendants()) do
-        if inst:IsA("BasePart") and inst:FindFirstChildOfClass("Debris") then
+        if isBasePart(inst) and inst:FindFirstChildOfClass("Debris") then
             pcall(function() inst:Destroy() end)
             count = count + 1
             if count >= Server_Config.DebrisBreaker and Server_Config.DebrisBreaker > 0 then break end
@@ -363,7 +395,7 @@ end
 local function attachToMouseObject()
     local mouse = LocalPlayer:GetMouse()
     local root = getRoot()
-    if not mouse or not mouse.Target or not root then
+    if not mouse or not mouse.Target or not isBasePart(root) or not isBasePart(mouse.Target) then
         Fluent:Notify({ Title = "Attach", Content = "No target under mouse.", Duration = 2 })
         return
     end
@@ -383,8 +415,8 @@ end
 local function breakToPlayer(player)
     if not player or not player.Character then return end
     for _, part in ipairs(player.Character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = false
+        if isBasePart(part) then
+            safeSetCanCollide(part, false)
         end
     end
 end
@@ -456,29 +488,34 @@ local function KickAll()
 
     Server_Config.KickAllRunning = true
     local root = getRoot()
-    if not root then
+    if not isBasePart(root) then
         Server_Config.KickAllRunning = false
         return
     end
     local origin = root.Position
+    if typeof(origin) ~= "Vector3" then
+        Server_Config.KickAllRunning = false
+        return
+    end
 
     for _, player in ipairs(Players:GetPlayers()) do
         if not (player == LocalPlayer or Server_Config.Whitelisted[player.Name]) then
             local char = player.Character
             local tRoot = char and char:FindFirstChild("HumanoidRootPart")
-            if tRoot then
+            if isBasePart(tRoot) then
                 local angle = math.random() * math.pi * 2
                 local radius = Server_Config.PlacementRadius
                 local x = origin.X + math.cos(angle) * radius
                 local z = origin.Z + math.sin(angle) * radius
                 local y = origin.Y + Server_Config.PlacementHeight
 
-                pcall(function()
-                    tRoot.CFrame = CFrame.new(x, y, z)
-                    tRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                local targetPos = Vector3.new(x, y, z)
+                if typeof(targetPos) == "Vector3" then
+                    safeSetCFrame(tRoot, CFrame.new(targetPos))
+                    safeSetLinearVelocity(tRoot, Vector3.new(0, 0, 0))
                     fireRemote("PlayerEvents", "RagdollPlayer")
                     fireRemote("CharacterEvents", "RagdollRemote")
-                end)
+                end
             end
             task.wait(math.max(0.1, 0.02))
         end

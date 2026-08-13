@@ -116,6 +116,31 @@ local function getHumanoid()
     return char and char:FindFirstChildOfClass("Humanoid")
 end
 
+local function isBasePart(obj)
+    return obj and typeof(obj) == "Instance" and obj:IsA("BasePart")
+end
+
+local function safeSetLinearVelocity(part, velocity)
+    if not isBasePart(part) then return false end
+    if typeof(velocity) ~= "Vector3" then return false end
+    if part.Anchored then return false end
+    pcall(function()
+        part:SetNetworkOwner(LocalPlayer)
+        part.AssemblyLinearVelocity = velocity
+    end)
+    return true
+end
+
+local function safeSetCFrame(part, cf)
+    if not isBasePart(part) then return false end
+    if typeof(cf) ~= "CFrame" then return false end
+    pcall(function()
+        part:SetNetworkOwner(LocalPlayer)
+        part.CFrame = cf
+    end)
+    return true
+end
+
 local function getTargetRoot(plr)
     if not plr or plr == LocalPlayer then return nil end
     local char = plr.Character
@@ -222,13 +247,16 @@ end
 
 local function killAllPlayers()
     local myRoot = getRoot()
-    if not myRoot or isRagdolled() then return 0 end
+    if not isBasePart(myRoot) or isRagdolled() then return 0 end
     local targets = getTargetsInRange()
     local count = 0
     for _, plr in ipairs(targets) do
         local tRoot = getTargetRoot(plr)
-        if tRoot then
-            tRoot.AssemblyLinearVelocity = CFrame.new(myRoot.Position, tRoot.Position).LookVector * 500 + Vector3.new(0, 150, 0)
+        if isBasePart(tRoot) then
+            local dir = CFrame.new(myRoot.Position, tRoot.Position).LookVector
+            if typeof(dir) == "Vector3" then
+                safeSetLinearVelocity(tRoot, dir * 500 + Vector3.new(0, 150, 0))
+            end
             fireRemote("GameCorrectionEvents", "StopAllVelocity")
             count = count + 1
         end
@@ -254,14 +282,14 @@ end
 
 local function massBringAll()
     local myRoot = getRoot()
-    if not myRoot or isRagdolled() then return end
+    if not isBasePart(myRoot) or isRagdolled() then return end
     local targets = getTargetsInRange()
     local count = 0
     for _, plr in ipairs(targets) do
         local tRoot = getTargetRoot(plr)
-        if tRoot then
-            tRoot.CFrame = myRoot.CFrame + Vector3.new(0, 5 + count * 3, 0)
-            tRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        if isBasePart(tRoot) then
+            safeSetCFrame(tRoot, myRoot.CFrame + Vector3.new(0, 5 + count * 3, 0))
+            safeSetLinearVelocity(tRoot, Vector3.new(0, 0, 0))
             count = count + 1
         end
     end
@@ -273,9 +301,9 @@ local function massSendToHeaven()
     local count = 0
     for _, plr in ipairs(targets) do
         local tRoot = getTargetRoot(plr)
-        if tRoot then
-            tRoot.CFrame = CFrame.new(0, -250, 0)
-            tRoot.AssemblyLinearVelocity = Vector3.new(0, -300, 0)
+        if isBasePart(tRoot) then
+            safeSetCFrame(tRoot, CFrame.new(0, -250, 0))
+            safeSetLinearVelocity(tRoot, Vector3.new(0, -300, 0))
             fireRemote("GameCorrectionEvents", "TeleportToGround")
             count = count + 1
         end
@@ -329,14 +357,17 @@ end
 
 local function applyAttractionAura()
     local myRoot = getRoot()
-    if not myRoot or isRagdolled() then return end
+    if not isBasePart(myRoot) or isRagdolled() then return end
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and not isSafeTarget(plr) then
             local tRoot = getTargetRoot(plr)
-            if tRoot then
-                local dist = (myRoot.Position - tRoot.Position).Magnitude
-                if dist <= ServerAuras_Config.AuraRadius and dist > 1 then
-                    tRoot.AssemblyLinearVelocity = (myRoot.Position - tRoot.Position).Unit * ServerAuras_Config.AuraPower
+            if isBasePart(tRoot) then
+                local diff = myRoot.Position - tRoot.Position
+                if typeof(diff) == "Vector3" then
+                    local dist = diff.Magnitude
+                    if dist <= ServerAuras_Config.AuraRadius and dist > 1 then
+                        safeSetLinearVelocity(tRoot, diff.Unit * ServerAuras_Config.AuraPower)
+                    end
                 end
             end
         end
@@ -345,16 +376,19 @@ end
 
 local function applyFlingAura()
     local myRoot = getRoot()
-    if not myRoot or isRagdolled() then return end
+    if not isBasePart(myRoot) or isRagdolled() then return end
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and not isSafeTarget(plr) then
             local tRoot = getTargetRoot(plr)
-            if tRoot then
-                local dist = (myRoot.Position - tRoot.Position).Magnitude
-                if dist <= ServerAuras_Config.AuraRadius and dist > 1 then
-                    tRoot.AssemblyLinearVelocity = (tRoot.Position - myRoot.Position).Unit * ServerAuras_Config.AuraPower + Vector3.new(0, 80, 0)
-                    fireRemote("CharacterEvents", "RagdollRemote")
-                    fireRemote("PlayerEvents", "RagdollPlayer")
+            if isBasePart(tRoot) then
+                local diff = tRoot.Position - myRoot.Position
+                if typeof(diff) == "Vector3" then
+                    local dist = diff.Magnitude
+                    if dist <= ServerAuras_Config.AuraRadius and dist > 1 then
+                        safeSetLinearVelocity(tRoot, diff.Unit * ServerAuras_Config.AuraPower + Vector3.new(0, 80, 0))
+                        fireRemote("CharacterEvents", "RagdollRemote")
+                        fireRemote("PlayerEvents", "RagdollPlayer")
+                    end
                 end
             end
         end
@@ -363,12 +397,12 @@ end
 
 local function applyKickAura()
     local myRoot = getRoot()
-    if not myRoot or isRagdolled() then return end
+    if not isBasePart(myRoot) or isRagdolled() then return end
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and not isSafeTarget(plr) then
             local tRoot = getTargetRoot(plr)
-            if tRoot and (myRoot.Position - tRoot.Position).Magnitude <= ServerAuras_Config.AuraRadius then
-                tRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            if isBasePart(tRoot) and (myRoot.Position - tRoot.Position).Magnitude <= ServerAuras_Config.AuraRadius then
+                safeSetLinearVelocity(tRoot, Vector3.new(0, 0, 0))
                 fireRemote("CharacterEvents", "RagdollRemote")
                 fireRemote("PlayerEvents", "RagdollPlayer")
             end
@@ -378,13 +412,13 @@ end
 
 local function applyVoidAura()
     local myRoot = getRoot()
-    if not myRoot then return end
+    if not isBasePart(myRoot) then return end
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and not isSafeTarget(plr) then
             local tRoot = getTargetRoot(plr)
-            if tRoot and (myRoot.Position - tRoot.Position).Magnitude <= ServerAuras_Config.AuraRadius then
-                tRoot.CFrame = CFrame.new(0, -250, 0)
-                tRoot.AssemblyLinearVelocity = Vector3.new(0, -300, 0)
+            if isBasePart(tRoot) and (myRoot.Position - tRoot.Position).Magnitude <= ServerAuras_Config.AuraRadius then
+                safeSetCFrame(tRoot, CFrame.new(0, -250, 0))
+                safeSetLinearVelocity(tRoot, Vector3.new(0, -300, 0))
                 fireRemote("GameCorrectionEvents", "TeleportToGround")
             end
         end
@@ -393,15 +427,20 @@ end
 
 local function applyFollowAura()
     local myRoot = getRoot()
-    if not myRoot or isRagdolled() then return end
+    if not isBasePart(myRoot) or isRagdolled() then return end
     local followPos = myRoot.CFrame * CFrame.new(0, 0, -10)
+    if typeof(followPos) ~= "CFrame" then return end
+    local followPosition = followPos.Position
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and not isSafeTarget(plr) then
             local tRoot = getTargetRoot(plr)
-            if tRoot then
-                local dist = (followPos.Position - tRoot.Position).Magnitude
-                if dist <= ServerAuras_Config.AuraRadius and dist > 1 then
-                    tRoot.AssemblyLinearVelocity = (followPos.Position - tRoot.Position).Unit * ServerAuras_Config.AuraPower
+            if isBasePart(tRoot) then
+                local diff = followPosition - tRoot.Position
+                if typeof(diff) == "Vector3" then
+                    local dist = diff.Magnitude
+                    if dist <= ServerAuras_Config.AuraRadius and dist > 1 then
+                        safeSetLinearVelocity(tRoot, diff.Unit * ServerAuras_Config.AuraPower)
+                    end
                 end
             end
         end
@@ -450,6 +489,7 @@ local function getExplosionParams(method)
 end
 
 local function spawnExplosionAt(pos)
+    if typeof(pos) ~= "Vector3" then return end
     pcall(function()
         local method = ServerAuras_Config.ExplosionMethod
 
@@ -458,9 +498,9 @@ local function spawnExplosionAt(pos)
             for _, plr in ipairs(Players:GetPlayers()) do
                 if plr ~= LocalPlayer then
                     local tRoot = getTargetRoot(plr)
-                    if tRoot and (pos - tRoot.Position).Magnitude <= ServerAuras_Config.ExplosionRadius then
-                        tRoot.CFrame = CFrame.new(0, -250, 0)
-                        tRoot.AssemblyLinearVelocity = Vector3.new(0, -300, 0)
+                    if isBasePart(tRoot) and (pos - tRoot.Position).Magnitude <= ServerAuras_Config.ExplosionRadius then
+                        safeSetCFrame(tRoot, CFrame.new(0, -250, 0))
+                        safeSetLinearVelocity(tRoot, Vector3.new(0, -300, 0))
                         fireRemote("GameCorrectionEvents", "TeleportToGround")
                     end
                 end
@@ -472,8 +512,10 @@ local function spawnExplosionAt(pos)
             for _, plr in ipairs(Players:GetPlayers()) do
                 if plr ~= LocalPlayer then
                     local tRoot = getTargetRoot(plr)
-                    if tRoot and (pos - tRoot.Position).Magnitude <= ServerAuras_Config.ExplosionRadius then
-                        tRoot.AssemblyLinearVelocity = tRoot.AssemblyLinearVelocity + Vector3.new(0, 150, 0)
+                    if isBasePart(tRoot) and (pos - tRoot.Position).Magnitude <= ServerAuras_Config.ExplosionRadius then
+                        if isBasePart(tRoot) and typeof(tRoot.AssemblyLinearVelocity) == "Vector3" then
+                            safeSetLinearVelocity(tRoot, tRoot.AssemblyLinearVelocity + Vector3.new(0, 150, 0))
+                        end
                     end
                 end
             end
@@ -494,11 +536,11 @@ end
 
 local function explosionTargets()
     local myRoot = getRoot()
-    if not myRoot then return end
+    if not isBasePart(myRoot) then return end
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer then
             local tRoot = getTargetRoot(plr)
-            if tRoot and (myRoot.Position - tRoot.Position).Magnitude <= ServerAuras_Config.MassRadius then
+            if isBasePart(tRoot) and (myRoot.Position - tRoot.Position).Magnitude <= ServerAuras_Config.MassRadius then
                 spawnExplosionAt(tRoot.Position)
             end
         end
@@ -547,14 +589,14 @@ local objectAuraLastScan = 0
 -- Re-scan parts inside radius (heavy GetDescendants throttled to 0.5s)
 local function scanObjectAuraParts()
     local myRoot = getRoot()
-    if not myRoot then return end
+    if not isBasePart(myRoot) then return end
     local now = os.clock()
     if now - objectAuraLastScan < 0.5 then return end
     objectAuraLastScan = now
     table.clear(objectAuraParts)
     local char = LocalPlayer.Character
     for _, inst in ipairs(Workspace:GetDescendants()) do
-        if inst:IsA("BasePart") and inst.Anchored == false then
+        if isBasePart(inst) and inst.Anchored == false then
             if not char or not inst:IsDescendantOf(char) then
                 if (inst.Position - myRoot.Position).Magnitude <= ServerAuras_Config.ObjectAuraRadius then
                     objectAuraParts[inst] = true
@@ -566,24 +608,32 @@ end
 
 local function applyObjectAuraToParts()
     local myRoot = getRoot()
-    if not myRoot or isRagdolled() then return end
+    if not isBasePart(myRoot) or isRagdolled() then return end
     scanObjectAuraParts()
     local speed = ServerAuras_Config.ObjectAuraSpeed
     local mode = ServerAuras_Config.ObjectAuraMode
     for part in pairs(objectAuraParts) do
         if part and part.Parent then
             pcall(function()
+                if not isBasePart(part) then return end
                 local diff = part.Position - myRoot.Position
+                if typeof(diff) ~= "Vector3" then return end
                 local dist = math.max(diff.Magnitude, 1)
                 if mode == "Object Tornado" then
                     local up = Vector3.new(0, 1, 0)
                     local tangent = diff.Unit:Cross(up)
                     if tangent.Magnitude < 0.01 then tangent = Vector3.new(1, 0, 0) end
-                    part.AssemblyLinearVelocity = tangent.Unit * speed + Vector3.new(0, speed * 0.4, 0)
+                    safeSetLinearVelocity(part, tangent.Unit * speed + Vector3.new(0, speed * 0.4, 0))
                 elseif mode == "Object Aura" then
-                    part.AssemblyLinearVelocity = (myRoot.Position - part.Position).Unit * speed
+                    local pullDiff = myRoot.Position - part.Position
+                    if typeof(pullDiff) == "Vector3" and pullDiff.Magnitude > 0.001 then
+                        safeSetLinearVelocity(part, pullDiff.Unit * speed)
+                    end
                 elseif mode == "Object Float" then
-                    part.AssemblyLinearVelocity = Vector3.new(part.AssemblyLinearVelocity.X, speed, part.AssemblyLinearVelocity.Z)
+                    local v = part.AssemblyLinearVelocity
+                    if typeof(v) == "Vector3" then
+                        safeSetLinearVelocity(part, Vector3.new(v.X, speed, v.Z))
+                    end
                 end
             end)
         end

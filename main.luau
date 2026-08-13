@@ -121,30 +121,63 @@ local GradientInitStatus, GradientInitErr = pcall(function()
     table.insert(_G.GradientWindows, Window)
 
     -- ================================================================
-    -- 3) Build the shared 8-tab layout (each AddTab guarded)
+    -- 3) Build the shared 8-tab layout. Each tab is added in its own
+    --    pcall so one broken icon name / tab error NEVER aborts the
+    --    creation of the remaining tabs. If the attempt with Icon
+    --    fails, we retry without Icon as a safe fallback.
     -- ================================================================
-    local Tabs = nil
-    do
-        local status, built = pcall(function()
-            return {
-                Protections = Window:AddTab({ Title = "Protections", Icon = "shield" }),
-                Movement = Window:AddTab({ Title = "Movement", Icon = "person-standing" }),
-                Combat = Window:AddTab({ Title = "Combat", Icon = "swords" }),
-                Visuals = Window:AddTab({ Title = "Visuals", Icon = "sparkles" }),
-                Server = Window:AddTab({ Title = "Server", Icon = "server" }),
-                Misc = Window:AddTab({ Title = "Misc", Icon = "wrench" }),
-                Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
-                Info = Window:AddTab({ Title = "Info", Icon = "info" })
-            }
-        end)
-        if status and type(built) == "table" and built.Protections then
-            Tabs = built
+    local tabSpecs = {
+        { key = "Protections", title = "Protections", icon = "shield" },
+        { key = "Movement", title = "Movement", icon = "person-standing" },
+        { key = "Combat", title = "Combat", icon = "swords" },
+        { key = "Visuals", title = "Visuals", icon = "sparkles" },
+        { key = "Server", title = "Server", icon = "server" },
+        { key = "Misc", title = "Misc", icon = "wrench" },
+        { key = "Settings", title = "Settings", icon = "settings" },
+        { key = "Info", title = "Info", icon = "info" }
+    }
+    local Tabs = {}
+    local tabCount = 0
+
+    for _, spec in ipairs(tabSpecs) do
+        local tab = nil
+        -- Pre-check icon via Fluent.GetIcon if available
+        local safeIcon = spec.icon
+        if type(Fluent.GetIcon) == "function" then
+            local okIcon, asset = pcall(Fluent.GetIcon, Fluent, spec.icon)
+            if not (okIcon and type(asset) == "string") then
+                safeIcon = nil
+            end
+        end
+
+        -- Attempt 1: with safeIcon (if validated)
+        local ok1, t1 = pcall(Window.AddTab, Window, { Title = spec.title, Icon = safeIcon })
+        if ok1 and type(t1) == "table" then
+            tab = t1
         else
-            print("[Gradient] CRITICAL: AddTab returned EMPTY (nil) tabs.")
-            return
+            -- Attempt 2: retry strictly without Icon
+            local ok2, t2 = pcall(Window.AddTab, Window, { Title = spec.title })
+            if ok2 and type(t2) == "table" then
+                tab = t2
+                print("[Gradient] Tab '" .. spec.title .. "' added without icon (fallback).")
+            else
+                print("[Gradient] WARN: Could not add tab '" .. spec.title .. "': " .. tostring(t1 or t2))
+            end
+        end
+
+        if tab then
+            Tabs[spec.key] = tab
+            tabCount = tabCount + 1
         end
     end
+
     _G.GradientTabs = Tabs
+    print("[Gradient] Total tabs successfully added: " .. tostring(tabCount) .. " / " .. tostring(#tabSpecs))
+
+    if not Tabs.Protections then
+        print("[Gradient] CRITICAL: 'Protections' tab creation failed. Aborting launch.")
+        return
+    end
 
     -- ================================================================
     -- 4) Load all modules (each download/load is individually guarded)
