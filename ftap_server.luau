@@ -136,7 +136,7 @@ local function safeSetLinearVelocity(part, velocity)
     if typeof(velocity) ~= "Vector3" then return false end
     if part.Anchored then return false end
     pcall(function()
-        part:SetNetworkOwner(LocalPlayer)
+        if typeof(part.SetNetworkOwner) == "function" then part:SetNetworkOwner(LocalPlayer) end
         part.AssemblyLinearVelocity = velocity
     end)
     return true
@@ -153,7 +153,7 @@ local function safeSetCFrame(part, cf)
     if not isBasePart(part) then return false end
     if typeof(cf) ~= "CFrame" then return false end
     pcall(function()
-        part:SetNetworkOwner(LocalPlayer)
+        if typeof(part.SetNetworkOwner) == "function" then part:SetNetworkOwner(LocalPlayer) end
         part.CFrame = cf
     end)
     return true

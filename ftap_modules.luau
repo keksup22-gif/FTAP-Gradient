@@ -168,22 +168,26 @@ local function safeSetAnchored(part, value)
     return true
 end
 
+-- Client-side network ownership helpers (guarded: SetNetworkOwner may be
+-- rejected / unavailable on some executors, so we pcall + typeof-check it).
 local function safeRequestNetworkOwnership(part)
-    if not isBasePart(part) then return false end
-    if part.Anchored then return false end
-    local ok = pcall(function()
-        part:SetNetworkOwner(LocalPlayer)
+    if not isBasePart(part) or part.Anchored then return false end
+    pcall(function()
+        if typeof(part.SetNetworkOwner) == "function" then
+            part:SetNetworkOwner(LocalPlayer)
+        end
     end)
-    return ok
+    return true
 end
 
 local function safeReturnNetworkOwnership(part)
-    if not isBasePart(part) then return false end
-    if part.Anchored then return false end
-    local ok = pcall(function()
-        part:SetNetworkOwner(nil)
+    if not isBasePart(part) or part.Anchored then return false end
+    pcall(function()
+        if typeof(part.SetNetworkOwner) == "function" then
+            part:SetNetworkOwner(nil)
+        end
     end)
-    return ok
+    return true
 end
 
 local function safeGetAttachment0(inst)
@@ -787,17 +791,38 @@ local Prot_Config = {
 -- character and destroys them instantly. Internal joints and any
 -- joints fully inside the character are never touched.
 -- ================================================================
+local FOREIGN_BODY_MOVER_NAMES = {
+    "BodyVelocity", "BodyGyro", "BodyPosition", "BodyAngularVelocity",
+    "BodyForce", "BodyThrust", "BodyTorque"
+}
+
 local function isForeignJoint(child)
     if not child then return false end
-    if not (child:IsA("Weld") or child:IsA("WeldConstraint")
-        or child:IsA("RopeConstraint") or child:IsA("AlignPosition")) then
-        return false
-    end
     local char = LocalPlayer.Character
     if not char then return false end
+
+    -- BodyMovers attached to our parts are ALWAYS foreign (we never create them)
+    if child:IsA("BodyMover") then
+        return true
+    end
+    for _, moverName in ipairs(FOREIGN_BODY_MOVER_NAMES) do
+        if child.ClassName == moverName then
+            return true
+        end
+    end
+
+    if not (child:IsA("Weld") or child:IsA("WeldConstraint")
+        or child:IsA("RopeConstraint") or child:IsA("AlignPosition")
+        or child:IsA("LinearVelocity") or child:IsA("AngularVelocity")
+        or child:IsA("AlignOrientation")) then
+        return false
+    end
     local part0, part1
-    if child:IsA("WeldConstraint") or child:IsA("AlignPosition") then
-        part0, part1 = child.Part0, child.Part1
+    if child:IsA("WeldConstraint") or child:IsA("AlignPosition")
+        or child:IsA("LinearVelocity") or child:IsA("AngularVelocity")
+        or child:IsA("AlignOrientation") then
+        part0 = child.Attachment0 and child.Attachment0.Parent
+        part1 = child.Attachment1 and child.Attachment1.Parent
     elseif child:IsA("RopeConstraint") then
         part0 = child.Attachment0 and child.Attachment0.Parent
         part1 = child.Attachment1 and child.Attachment1.Parent
@@ -978,6 +1003,47 @@ task.spawn(function()
         end
     end)
     end
+end)
+
+-- ================================================================
+-- CLIENT PHYSICS WATCHDOG (RunService.Heartbeat)
+--   * Anti-Fling: if HumanoidRootPart speed spikes past the cap
+--     (150 studs/s) we instantly zero ALL momentum client-side.
+--   * Blob Kick: pushes nearby blob parts away with pure client
+--     velocity writes (no server calls).
+-- ================================================================
+local PHYSICS_WATCHDOG_MAX_SPEED = 150
+local blobKickLastScan = 0
+RunService.Heartbeat:Connect(function()
+    pcall(function()
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root or not isBasePart(root) or root.Anchored or isRagdolled() then return end
+
+        if Prot_Config.AntiFling then
+            local vel = root.AssemblyLinearVelocity
+            if typeof(vel) == "Vector3" and vel.Magnitude > PHYSICS_WATCHDOG_MAX_SPEED then
+                safeSetLinearVelocity(root, Vector3.zero)
+                safeSetAngularVelocity(root, Vector3.zero)
+            end
+        end
+
+        if Prot_Config.AntiBlobSitAura then
+            local now = os.clock()
+            if now - blobKickLastScan >= 1 then
+                blobKickLastScan = now
+                for _, inst in ipairs(Workspace:GetDescendants()) do
+                    if string.find(string.lower(inst.Name), "blob") and isBasePart(inst) and not inst.Anchored then
+                        local diff = inst.Position - root.Position
+                        local dist = diff.Magnitude
+                        if dist > 0.01 and dist < 12 then
+                            safeSetLinearVelocity(inst, diff.Unit * 100)
+                        end
+                    end
+                end
+            end
+        end
+    end)
 end)
 
 -- Slow 0.5s fallback sweep for Anti-Grab (event listeners do the real work;

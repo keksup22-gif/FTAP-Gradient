@@ -1,13 +1,8 @@
---[[
-    ================================================================
-    Gradient Hub | FTAP - MONOLITHIC BUILD (build.lua)
-    Combined from: main.luau + all modules, in loader order.
-    Each module is isolated in its own pcall(function() end) wrapper,
-    mirroring the original loadstring-per-module behavior.
-    The whole init runs inside ONE outer pcall (no unprotected calls).
-    Horizontal top-tab interface (Fluid-style) + premium glass theme.
-    ================================================================
---]]
+-- ================================================================
+-- GRADIENT HUB | FTAP - MONOLITHIC BUILD (generated, do not edit)
+-- Generated: 2026-08-13 22:04:28
+-- Source split: part1 (main.luau) + 11 inlined modules + tail
+-- ================================================================
 
 --[[
     ================================================================
@@ -196,9 +191,7 @@ local GradientInitStatus, GradientInitErr = pcall(function()
     local BaseUrl = "https://raw.githubusercontent.com/keksup22-gif/FTAP-Gradient/main/"
 
 
--- ================================================================
 -- BEG MODULE: ftap_layout.luau
--- ================================================================
 pcall(function()
 --[[
     ================================================================
@@ -566,10 +559,9 @@ return Layout
 end)
 print('[Gradient] OK: ftap_layout.luau')
 task.wait(0.1)
+-- END MODULE: ftap_layout.luau
 
--- ================================================================
 -- BEG MODULE: ftap_uisettings.luau
--- ================================================================
 pcall(function()
 --[[
     ================================================================
@@ -1276,10 +1268,9 @@ print("[Gradient Hub] UI Settings module loaded successfully.")
 end)
 print('[Gradient] OK: ftap_uisettings.luau')
 task.wait(0.1)
+-- END MODULE: ftap_uisettings.luau
 
--- ================================================================
 -- BEG MODULE: ftap_mercury_visuals.luau
--- ================================================================
 pcall(function()
 --[[
     ================================================================
@@ -2727,10 +2718,9 @@ end
 end)
 print('[Gradient] OK: ftap_mercury_visuals.luau')
 task.wait(0.1)
+-- END MODULE: ftap_mercury_visuals.luau
 
--- ================================================================
 -- BEG MODULE: ftap_modules.luau
--- ================================================================
 pcall(function()
 --[[
     ================================================================
@@ -2862,6 +2852,96 @@ local function getHumanoid()
     return char and char:FindFirstChildOfClass("Humanoid")
 end
 
+local function isBasePart(obj)
+    return obj and typeof(obj) == "Instance" and obj:IsA("BasePart")
+end
+
+local function safeSetLinearVelocity(part, velocity)
+    if not isBasePart(part) then return false end
+    if typeof(velocity) ~= "Vector3" then return false end
+    if part.Anchored then return false end
+    pcall(function()
+        part.AssemblyLinearVelocity = velocity
+    end)
+    return true
+end
+
+local function safeSetAngularVelocity(part, velocity)
+    if not isBasePart(part) then return false end
+    if typeof(velocity) ~= "Vector3" then return false end
+    if part.Anchored then return false end
+    pcall(function()
+        part.AssemblyAngularVelocity = velocity
+    end)
+    return true
+end
+
+local function safeSetCanCollide(part, value)
+    if not isBasePart(part) then return false end
+    pcall(function()
+        part.CanCollide = not not value
+    end)
+    return true
+end
+
+local function safeSetAnchored(part, value)
+    if not isBasePart(part) then return false end
+    pcall(function()
+        part.Anchored = not not value
+    end)
+    return true
+end
+
+-- Client-side network ownership helpers (guarded: SetNetworkOwner may be
+-- rejected / unavailable on some executors, so we pcall + typeof-check it).
+local function safeRequestNetworkOwnership(part)
+    if not isBasePart(part) or part.Anchored then return false end
+    pcall(function()
+        if typeof(part.SetNetworkOwner) == "function" then
+            part:SetNetworkOwner(LocalPlayer)
+        end
+    end)
+    return true
+end
+
+local function safeReturnNetworkOwnership(part)
+    if not isBasePart(part) or part.Anchored then return false end
+    pcall(function()
+        if typeof(part.SetNetworkOwner) == "function" then
+            part:SetNetworkOwner(nil)
+        end
+    end)
+    return true
+end
+
+local function safeGetAttachment0(inst)
+    if not inst or not inst.Parent or not isBasePart(inst.Parent) then return nil end
+    local att = inst:FindFirstChildOfClass("Attachment")
+    if not att then
+        att = Instance.new("Attachment")
+        att.Name = "PhysicsHelperAttachment"
+        att.Parent = inst.Parent
+    end
+    return att
+end
+
+local function ensureAttachments(part)
+    if not isBasePart(part) then return nil, nil end
+    local att0 = part:FindFirstChild("PhysicsAlignAtt0")
+    if not att0 then
+        att0 = Instance.new("Attachment")
+        att0.Name = "PhysicsAlignAtt0"
+        att0.Parent = part
+    end
+    local att1 = part:FindFirstChild("PhysicsAlignAtt1")
+    if not att1 then
+        att1 = Instance.new("Attachment")
+        att1.Name = "PhysicsAlignAtt1"
+        att1.Parent = part
+    end
+    return att0, att1
+end
+
 -- True while FTAP's RagdollPlayerCharacter / GrabbingScript control the body.
 -- While ragdolled we must NOT write CFrame, velocities or Humanoid params.
 local function isRagdolled()
@@ -2965,18 +3045,20 @@ task.spawn(function()
             if not LP_Config.LockedCFrame then
                 LP_Config.LockedCFrame = root.CFrame
             end
-            root.CFrame = LP_Config.LockedCFrame
+            if isBasePart(root) then
+                root.CFrame = LP_Config.LockedCFrame
+            end
         else
             LP_Config.LockedCFrame = nil
         end
 
         -- Desync (Velocity / CFrame Packet Spoofing) - never while ragdolled
-        if LP_Config.Desync and not isRagdolled() then
+        if LP_Config.Desync and not isRagdolled() and isBasePart(root) and not root.Anchored then
             local oldVelocity = root.AssemblyLinearVelocity
-            root.AssemblyLinearVelocity = Vector3.new(0, -1000, 0)
+            safeSetLinearVelocity(root, Vector3.new(0, -1000, 0))
             RunService.RenderStepped:Wait()
-            if root then
-                root.AssemblyLinearVelocity = oldVelocity
+            if isBasePart(root) then
+                safeSetLinearVelocity(root, oldVelocity)
             end
         end
     end)
@@ -2988,7 +3070,7 @@ UserInputService.JumpRequest:Connect(function()
     if LP_Config.InfiniteJump and not isRagdolled() then
         local hum = getHumanoid()
         if hum then
-            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+            pcall(function() hum:ChangeState(Enum.HumanoidStateType.Jumping) end)
         end
     end
 end)
@@ -3010,15 +3092,15 @@ task.spawn(function()
         -- Noclip
         if LP_Config.Noclip then
             for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") and part.CanCollide then
-                    part.CanCollide = false
+                if isBasePart(part) and part.CanCollide then
+                    safeSetCanCollide(part, false)
                 end
             end
         end
 
         -- Speed Control (never force WalkSpeed while ragdolled by FTAP)
         if LP_Config.EnableSpeed and not isRagdolled() then
-            hum.WalkSpeed = LP_Config.SpeedControl
+            pcall(function() hum.WalkSpeed = LP_Config.SpeedControl end)
         end
 
         -- Jump Power / Height (only when user explicitly enables it AND the
@@ -3026,8 +3108,10 @@ task.spawn(function()
         -- While disabled we never write Humanoid params, so the game's own
         -- custom jump physics (TouchJump / RagdollPlayerCharacter) stay intact.
         if LP_Config.EnableJumpPower and not isRagdolled() then
-            hum.UseJumpPower = true
-            hum.JumpPower = LP_Config.JumpPower
+            pcall(function()
+                hum.UseJumpPower = true
+                hum.JumpPower = LP_Config.JumpPower
+            end)
         end
 
         -- Water Walk Platform Logic
@@ -3036,14 +3120,16 @@ task.spawn(function()
                 WaterPlatform = Instance.new("Part")
                 WaterPlatform.Name = "FTAP_WaterPlatform"
                 WaterPlatform.Size = Vector3.new(12, 1, 12)
-                WaterPlatform.Anchored = true
+                safeSetAnchored(WaterPlatform, true)
                 WaterPlatform.Transparency = 1
+                WaterPlatform.CanCollide = true
+                WaterPlatform.CastShadow = false
                 WaterPlatform.Parent = Workspace
             end
             WaterPlatform.CFrame = CFrame.new(root.Position.X, 2.5, root.Position.Z)
         else
             if WaterPlatform then
-                WaterPlatform:Destroy()
+                pcall(function() WaterPlatform:Destroy() end)
                 WaterPlatform = nil
             end
         end
@@ -3057,8 +3143,8 @@ task.spawn(function()
         if LP_Config.LoopTeleport then
             local targetPos = TeleportLocations[LP_Config.TeleportLocation]
             local root = getRoot()
-            if targetPos and root and not isRagdolled() then
-                root.CFrame = CFrame.new(targetPos)
+            if targetPos and root and isBasePart(root) and not isRagdolled() then
+                pcall(function() root.CFrame = CFrame.new(targetPos) end)
             end
         end
     end
@@ -3068,39 +3154,58 @@ end)
 local function teleportToMouse()
     local mouse = LocalPlayer:GetMouse()
     local root = getRoot()
-    if mouse and mouse.Hit and root and not isRagdolled() then
-        root.CFrame = CFrame.new(mouse.Hit.Position + Vector3.new(0, 3, 0))
+    if mouse and mouse.Hit and root and isBasePart(root) and not isRagdolled() then
+        pcall(function() root.CFrame = CFrame.new(mouse.Hit.Position + Vector3.new(0, 3, 0)) end)
         Fluent:Notify({ Title = "Teleport", Content = "Teleported to mouse position!", Duration = 2 })
     end
 end
 
--- Vehicle / Player Fly System
-local BodyGyro, BodyVelocity
+-- Vehicle / Player Fly System (modernized: AlignOrientation + LinearVelocity)
+local FlyAlignOrientation, FlyLinearVelocity
+local FlyAtt0, FlyAtt1
 local flyRenderTick = makeThrottled(0.1)
 task.spawn(function()
     while true do
         task.wait(0.1)
         flyRenderTick(function()
         local root = getRoot()
-        if not root then return end
+        if not root or not isBasePart(root) then return end
 
-        if LP_Config.VehicleFly and not isRagdolled() then
-            if not BodyGyro or not BodyGyro.Parent then
-                BodyGyro = Instance.new("BodyGyro")
-                BodyGyro.P = 9e4
-                BodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-                BodyGyro.CFrame = root.CFrame
-                BodyGyro.Parent = root
+        if LP_Config.VehicleFly and not isRagdolled() and not root.Anchored then
+            -- Ensure attachments exist for modern constraints
+            if not FlyAtt0 or not FlyAtt0.Parent then
+                FlyAtt0, FlyAtt1 = ensureAttachments(root)
             end
 
-            if not BodyVelocity or not BodyVelocity.Parent then
-                BodyVelocity = Instance.new("BodyVelocity")
-                BodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-                BodyVelocity.Velocity = Vector3.new(0, 0, 0)
-                BodyVelocity.Parent = root
+            -- Modern AlignOrientation (replaces BodyGyro)
+            if not FlyAlignOrientation or not FlyAlignOrientation.Parent then
+                FlyAlignOrientation = Instance.new("AlignOrientation")
+                FlyAlignOrientation.Name = "FTAP_FlyAlignOrientation"
+                FlyAlignOrientation.Mode = Enum.OrientationAlignmentMode.OneAttachment
+                FlyAlignOrientation.Attachment0 = FlyAtt0
+                FlyAlignOrientation.MaxTorque = 9e9
+                FlyAlignOrientation.Responsiveness = 200
+                FlyAlignOrientation.RigidityEnabled = false
+                FlyAlignOrientation.CFrame = root.CFrame
+                FlyAlignOrientation.Parent = root
             end
 
-            BodyGyro.CFrame = Camera.CFrame
+            -- Modern LinearVelocity (replaces BodyVelocity)
+            if not FlyLinearVelocity or not FlyLinearVelocity.Parent then
+                FlyLinearVelocity = Instance.new("LinearVelocity")
+                FlyLinearVelocity.Name = "FTAP_FlyLinearVelocity"
+                FlyLinearVelocity.VelocityRelativeTo = Enum.ActuatorRelativeTo.World
+                FlyLinearVelocity.Attachment0 = FlyAtt0
+                FlyLinearVelocity.MaxForce = 9e9
+                FlyLinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+                FlyLinearVelocity.Parent = root
+            end
+
+            -- Update orientation to match camera
+            if FlyAlignOrientation and FlyAtt0 then
+                FlyAlignOrientation.CFrame = Camera.CFrame
+            end
+
             local moveDir = Vector3.new()
 
             if UserInputService:IsKeyDown(Enum.KeyCode.W) then
@@ -3122,10 +3227,31 @@ task.spawn(function()
                 moveDir = moveDir - Vector3.new(0, 1, 0)
             end
 
-            BodyVelocity.Velocity = moveDir * (LP_Config.FlySpeed * 10)
+            if FlyLinearVelocity then
+                if moveDir.Magnitude > 0.001 then
+                    FlyLinearVelocity.VectorVelocity = moveDir.Unit * (LP_Config.FlySpeed * 10)
+                else
+                    FlyLinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+                end
+            end
         else
-            if BodyGyro then BodyGyro:Destroy() BodyGyro = nil end
-            if BodyVelocity then BodyVelocity:Destroy() BodyVelocity = nil end
+            -- Cleanup modern constraints when fly is off
+            if FlyAlignOrientation then
+                pcall(function() FlyAlignOrientation:Destroy() end)
+                FlyAlignOrientation = nil
+            end
+            if FlyLinearVelocity then
+                pcall(function() FlyLinearVelocity:Destroy() end)
+                FlyLinearVelocity = nil
+            end
+            if FlyAtt0 then
+                pcall(function() FlyAtt0:Destroy() end)
+                FlyAtt0 = nil
+            end
+            if FlyAtt1 then
+                pcall(function() FlyAtt1:Destroy() end)
+                FlyAtt1 = nil
+            end
         end
     end)
     end
@@ -3389,17 +3515,38 @@ local Prot_Config = {
 -- character and destroys them instantly. Internal joints and any
 -- joints fully inside the character are never touched.
 -- ================================================================
+local FOREIGN_BODY_MOVER_NAMES = {
+    "BodyVelocity", "BodyGyro", "BodyPosition", "BodyAngularVelocity",
+    "BodyForce", "BodyThrust", "BodyTorque"
+}
+
 local function isForeignJoint(child)
     if not child then return false end
-    if not (child:IsA("Weld") or child:IsA("WeldConstraint")
-        or child:IsA("RopeConstraint") or child:IsA("AlignPosition")) then
-        return false
-    end
     local char = LocalPlayer.Character
     if not char then return false end
+
+    -- BodyMovers attached to our parts are ALWAYS foreign (we never create them)
+    if child:IsA("BodyMover") then
+        return true
+    end
+    for _, moverName in ipairs(FOREIGN_BODY_MOVER_NAMES) do
+        if child.ClassName == moverName then
+            return true
+        end
+    end
+
+    if not (child:IsA("Weld") or child:IsA("WeldConstraint")
+        or child:IsA("RopeConstraint") or child:IsA("AlignPosition")
+        or child:IsA("LinearVelocity") or child:IsA("AngularVelocity")
+        or child:IsA("AlignOrientation")) then
+        return false
+    end
     local part0, part1
-    if child:IsA("WeldConstraint") or child:IsA("AlignPosition") then
-        part0, part1 = child.Part0, child.Part1
+    if child:IsA("WeldConstraint") or child:IsA("AlignPosition")
+        or child:IsA("LinearVelocity") or child:IsA("AngularVelocity")
+        or child:IsA("AlignOrientation") then
+        part0 = child.Attachment0 and child.Attachment0.Parent
+        part1 = child.Attachment1 and child.Attachment1.Parent
     elseif child:IsA("RopeConstraint") then
         part0 = child.Attachment0 and child.Attachment0.Parent
         part1 = child.Attachment1 and child.Attachment1.Parent
@@ -3525,34 +3672,37 @@ task.spawn(function()
         -- (separate loop below) is the only fallback — never every tick.
         -- Anti Ragdoll
         if Prot_Config.AntiRagdoll and hum then
-            hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-            if hum:GetState() == Enum.HumanoidStateType.Ragdoll or hum:GetState() == Enum.HumanoidStateType.FallingDown then
-                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-            end
+            pcall(function()
+                hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+                hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+                if hum:GetState() == Enum.HumanoidStateType.Ragdoll or hum:GetState() == Enum.HumanoidStateType.FallingDown then
+                    hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                end
+            end)
         end
 
         -- Anti Explode Physics Fix (only when WE own the physics; never
         -- writes velocity while FTAP's RagdollPlayerCharacter is active)
-        if Prot_Config.AntiExplode and not isRagdolled() then
-            root.RotVelocity = Vector3.new(0, 0, 0)
-            if root.AssemblyLinearVelocity.Magnitude > 250 then
-                root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        if Prot_Config.AntiExplode and not isRagdolled() and isBasePart(root) and not root.Anchored then
+            safeSetAngularVelocity(root, Vector3.new(0, 0, 0))
+            local vel = root.AssemblyLinearVelocity
+            if typeof(vel) == "Vector3" and vel.Magnitude > 250 then
+                safeSetLinearVelocity(root, Vector3.new(0, 0, 0))
             end
         end
 
         -- Anti Void Teleport (restore ONLY if we truly fell below the void
         -- line AND the body is not ragdolled by another player / RagdollPC)
-        if Prot_Config.AntiVoid and not isRagdolled() and root.Position.Y < Prot_Config.VoidThreshold then
-            root.CFrame = CFrame.new(TeleportLocations["Spawn"])
+        if Prot_Config.AntiVoid and not isRagdolled() and isBasePart(root) and root.Position.Y < Prot_Config.VoidThreshold then
+            pcall(function() root.CFrame = CFrame.new(TeleportLocations["Spawn"]) end)
             Fluent:Notify({ Title = "Anti Void", Content = "Saved from falling into the void!", Duration = 3 })
         end
 
         -- Anti Sticky Self
         if Prot_Config.AntiStickySelf then
             for _, obj in ipairs(char:GetChildren()) do
-                if obj:IsA("TouchTransporter") or (obj:IsA("BasePart") and obj.Name == "StickyPart") then
-                    obj:Destroy()
+                if obj:IsA("TouchTransporter") or (isBasePart(obj) and obj.Name == "StickyPart") then
+                    pcall(function() obj:Destroy() end)
                 end
             end
         end
@@ -3564,10 +3714,11 @@ task.spawn(function()
                 antiBlobSitLastScan = now
                 pcall(function()
                     for _, inst in ipairs(Workspace:GetDescendants()) do
-                        if string.find(string.lower(inst.Name), "blob") and inst:IsA("BasePart") then
+                        if string.find(string.lower(inst.Name), "blob") and isBasePart(inst) then
                             local dist = (root.Position - inst.Position).Magnitude
                             if dist < 8 then
-                                inst.Velocity = (inst.Position - root.Position).Unit * 100
+                                safeRequestNetworkOwnership(inst)
+                                safeSetLinearVelocity(inst, (inst.Position - root.Position).Unit * 100)
                             end
                         end
                     end
@@ -3576,6 +3727,47 @@ task.spawn(function()
         end
     end)
     end
+end)
+
+-- ================================================================
+-- CLIENT PHYSICS WATCHDOG (RunService.Heartbeat)
+--   * Anti-Fling: if HumanoidRootPart speed spikes past the cap
+--     (150 studs/s) we instantly zero ALL momentum client-side.
+--   * Blob Kick: pushes nearby blob parts away with pure client
+--     velocity writes (no server calls).
+-- ================================================================
+local PHYSICS_WATCHDOG_MAX_SPEED = 150
+local blobKickLastScan = 0
+RunService.Heartbeat:Connect(function()
+    pcall(function()
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root or not isBasePart(root) or root.Anchored or isRagdolled() then return end
+
+        if Prot_Config.AntiFling then
+            local vel = root.AssemblyLinearVelocity
+            if typeof(vel) == "Vector3" and vel.Magnitude > PHYSICS_WATCHDOG_MAX_SPEED then
+                safeSetLinearVelocity(root, Vector3.zero)
+                safeSetAngularVelocity(root, Vector3.zero)
+            end
+        end
+
+        if Prot_Config.AntiBlobSitAura then
+            local now = os.clock()
+            if now - blobKickLastScan >= 1 then
+                blobKickLastScan = now
+                for _, inst in ipairs(Workspace:GetDescendants()) do
+                    if string.find(string.lower(inst.Name), "blob") and isBasePart(inst) and not inst.Anchored then
+                        local diff = inst.Position - root.Position
+                        local dist = diff.Magnitude
+                        if dist > 0.01 and dist < 12 then
+                            safeSetLinearVelocity(inst, diff.Unit * 100)
+                        end
+                    end
+                end
+            end
+        end
+    end)
 end)
 
 -- Slow 0.5s fallback sweep for Anti-Grab (event listeners do the real work;
@@ -3650,8 +3842,9 @@ task.spawn(function()
                 barrierScanCooldown = now
                 for _, inst in ipairs(Workspace:GetDescendants()) do
                     if string.find(string.lower(inst.Name), "barrier") or string.find(string.lower(inst.Name), "plotborder") then
-                        if inst:IsA("BasePart") then
-                            inst.CanCollide = false
+                        if isBasePart(inst) then
+                            safeRequestNetworkOwnership(inst)
+                            safeSetCanCollide(inst, false)
                         end
                     end
                 end
@@ -3674,7 +3867,7 @@ task.spawn(function()
         if Prot_Config.AntiBurn then
             for _, child in ipairs(char:GetDescendants()) do
                 if child:IsA("Fire") or child:IsA("Smoke") or child.Name == "BurnTag" then
-                    child:Destroy()
+                    pcall(function() child:Destroy() end)
                 end
             end
         end
@@ -3683,7 +3876,7 @@ task.spawn(function()
             for _, child in ipairs(char:GetDescendants()) do
                 if child:IsA("Decal") or child:IsA("Texture") then
                     if child.Name == "PaintDecal" or string.find(string.lower(child.Name), "paint") then
-                        child:Destroy()
+                        pcall(function() child:Destroy() end)
                     end
                 end
             end
@@ -3707,8 +3900,14 @@ task.spawn(function()
                     if string.find(string.lower(inst.Name), "blob") and inst:IsA("Model") then
                         local lArm = inst:FindFirstChild("LeftArm") or inst:FindFirstChild("Left UpperArm")
                         local rArm = inst:FindFirstChild("RightArm") or inst:FindFirstChild("Right UpperArm")
-                        if lArm and lArm:IsA("BasePart") then lArm.CanCollide = false end
-                        if rArm and rArm:IsA("BasePart") then rArm.CanCollide = false end
+                        if isBasePart(lArm) then
+                            safeRequestNetworkOwnership(lArm)
+                            safeSetCanCollide(lArm, false)
+                        end
+                        if isBasePart(rArm) then
+                            safeRequestNetworkOwnership(rArm)
+                            safeSetCanCollide(rArm, false)
+                        end
                     end
                 end
             end
@@ -3724,7 +3923,7 @@ task.spawn(function()
             for _, inst in ipairs(Workspace:GetDescendants()) do
                 local name = string.lower(inst.Name)
                 if string.find(name, "pcld") or string.find(name, "antifling") then
-                    if inst:IsA("BasePart") or inst:IsA("Model") then
+                    if isBasePart(inst) or inst:IsA("Model") then
                         pcall(function() inst:Destroy() end)
                     end
                 end
@@ -3743,17 +3942,18 @@ task.spawn(function()
         if Prot_Config.AntiFling then
             pcall(function()
                 local root = getRoot()
-                if not root or isRagdolled() then return end
+                if not root or not isBasePart(root) or isRagdolled() then return end
                 local vel = root.AssemblyLinearVelocity
+                if typeof(vel) ~= "Vector3" then return end
                 if vel.Magnitude < Prot_Config.FlingSpeedThreshold then
                     antiFlingSafeCFrame = root.CFrame
                 elseif antiFlingSafeCFrame then
                     local hum = getHumanoid()
                     root.CFrame = antiFlingSafeCFrame
-                    root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                    root.RotVelocity = Vector3.new(0, 0, 0)
+                    safeSetLinearVelocity(root, Vector3.new(0, 0, 0))
+                    safeSetAngularVelocity(root, Vector3.new(0, 0, 0))
                     if hum then
-                        hum:ChangeState(Enum.HumanoidStateType.Running)
+                        pcall(function() hum:ChangeState(Enum.HumanoidStateType.Running) end)
                     end
                 end
             end)
@@ -3761,9 +3961,11 @@ task.spawn(function()
     end
 end)
 
--- 9. Anti Network Ownership - periodically returns network ownership of our
--- parts to the server (SetNetworkOwner(nil)) so attackers can't keep holding
--- our parts to fling us. Throttled to 0.5s.
+-- 9. Anti Network Ownership - intelligently manages network ownership:
+--   * Keeps OUR parts owned by server (SetNetworkOwner(nil)) to prevent
+--     attackers from holding our parts to fling us
+--   * Only touches non-anchored BaseParts, wrapped in pcall
+--   * Skips if grabbing someone (grabbed parts must stay under our ownership)
 local antiNetOwnerTick = makeThrottled(0.5)
 task.spawn(function()
     while true do
@@ -3773,8 +3975,8 @@ task.spawn(function()
                 local char = LocalPlayer.Character
                 if not char then return end
                 for _, part in ipairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        pcall(function() part:SetNetworkOwner(nil) end)
+                    if isBasePart(part) and not part.Anchored then
+                        safeReturnNetworkOwnership(part)
                     end
                 end
             end
@@ -4041,10 +4243,9 @@ end
 end)
 print('[Gradient] OK: ftap_modules.luau')
 task.wait(0.1)
+-- END MODULE: ftap_modules.luau
 
--- ================================================================
 -- BEG MODULE: ftap_target.luau
--- ================================================================
 pcall(function()
 --[[
     ================================================================
@@ -4170,6 +4371,50 @@ end
 local function getHumanoid()
     local char = LocalPlayer.Character
     return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function isBasePart(obj)
+    return obj and typeof(obj) == "Instance" and obj:IsA("BasePart")
+end
+
+local function safeSetLinearVelocity(part, velocity)
+    if not isBasePart(part) then return false end
+    if typeof(velocity) ~= "Vector3" then return false end
+    if part.Anchored then return false end
+    pcall(function()
+        if typeof(part.SetNetworkOwner) == "function" then part:SetNetworkOwner(LocalPlayer) end
+        part.AssemblyLinearVelocity = velocity
+    end)
+    return true
+end
+
+local function safeSetAngularVelocity(part, velocity)
+    if not isBasePart(part) then return false end
+    if typeof(velocity) ~= "Vector3" then return false end
+    if part.Anchored then return false end
+    pcall(function()
+        if typeof(part.SetNetworkOwner) == "function" then part:SetNetworkOwner(LocalPlayer) end
+        part.AssemblyAngularVelocity = velocity
+    end)
+    return true
+end
+
+local function safeSetCFrame(part, cf)
+    if not isBasePart(part) then return false end
+    if typeof(cf) ~= "CFrame" then return false end
+    pcall(function()
+        if typeof(part.SetNetworkOwner) == "function" then part:SetNetworkOwner(LocalPlayer) end
+        part.CFrame = cf
+    end)
+    return true
+end
+
+local function isRagdolled(hum)
+    if not hum then return false end
+    local st = hum:GetState()
+    return st == Enum.HumanoidStateType.Ragdoll
+        or st == Enum.HumanoidStateType.FallingDown
+        or hum.Sit == true
 end
 
 local function getTargetRoot()
@@ -4424,7 +4669,7 @@ local function getAttackCFrame(tRoot)
 end
 
 local function applyDestroyMethod(targetRoot, targetHum)
-    if not targetRoot then return end
+    if not isBasePart(targetRoot) then return end
     if Target_Config.SelectedPlayer == LocalPlayer then return end
     pcall(function()
         local method = Target_Config.DestroyMethod
@@ -4432,32 +4677,35 @@ local function applyDestroyMethod(targetRoot, targetHum)
         -- KICK: see-saw positioning & constant line pressure
         if method == "Kick" then
             local myRoot = getRoot()
-            if myRoot then
-                targetRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            if isBasePart(myRoot) then
+                safeSetLinearVelocity(targetRoot, Vector3.new(0, 0, 0))
                 fireRemote("CharacterEvents", "RagdollRemote")
                 fireRemote("PlayerEvents", "RagdollPlayer")
                 task.wait(Target_Config.DestroyLineDelay)
-                myRoot.CFrame = CFrame.lookAt(myRoot.Position, targetRoot.Position)
+                safeSetCFrame(myRoot, CFrame.lookAt(myRoot.Position, targetRoot.Position))
             end
         end
 
         -- LAG: spam slow-motion / teleport jitter
         if method == "Lag" then
             if targetHum then
-                targetHum.WalkSpeed = 3
+                pcall(function() targetHum.WalkSpeed = 3 end)
                 task.wait()
-                targetHum.WalkSpeed = 0
+                pcall(function() targetHum.WalkSpeed = 0 end)
             end
             task.wait()
-            if targetHum then targetHum.WalkSpeed = 3 end
+            if targetHum then pcall(function() targetHum.WalkSpeed = 3 end) end
         end
 
         -- KILL: velocity deflection toward void / instakill damage
         if method == "Kill" then
-            if targetRoot then
+            if isBasePart(targetRoot) then
                 local myRoot = getRoot()
-                if myRoot then
-                    targetRoot.AssemblyLinearVelocity = CFrame.new(myRoot.Position, targetRoot.Position).LookVector * 500 + Vector3.new(0, 150, 0)
+                if isBasePart(myRoot) then
+                    local dir = CFrame.new(myRoot.Position, targetRoot.Position).LookVector
+                    if typeof(dir) == "Vector3" then
+                        safeSetLinearVelocity(targetRoot, dir * 500 + Vector3.new(0, 150, 0))
+                    end
                 end
                 fireRemote("GameCorrectionEvents", "StopAllVelocity")
             end
@@ -4466,20 +4714,22 @@ local function applyDestroyMethod(targetRoot, targetHum)
         -- LOCK: pin target position
         if method == "Lock" then
             local lockedPos = getAttackCFrame(targetRoot) + Vector3.new(0, -Target_Config.YOffset, 0)
-            targetRoot.CFrame = lockedPos
-            targetRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-            targetRoot.RotVelocity = Vector3.new(0, 0, 0)
+            if typeof(lockedPos) == "CFrame" then
+                safeSetCFrame(targetRoot, lockedPos)
+            end
+            safeSetLinearVelocity(targetRoot, Vector3.new(0, 0, 0))
+            safeSetAngularVelocity(targetRoot, Vector3.new(0, 0, 0))
             if targetHum then
-                targetHum:ChangeState(Enum.HumanoidStateType.Frozen)
+                pcall(function() targetHum:ChangeState(Enum.HumanoidStateType.Frozen) end)
             end
             fireRemote("CharacterEvents", "RagdollRemote")
         end
 
         -- TELEPORT-AWAY: fling target into the void
         if method == "Fling Void" then
-            if targetRoot then
-                targetRoot.CFrame = CFrame.new(0, -250, 0)
-                targetRoot.AssemblyLinearVelocity = Vector3.new(0, -300, 0)
+            if isBasePart(targetRoot) then
+                safeSetCFrame(targetRoot, CFrame.new(0, -250, 0))
+                safeSetLinearVelocity(targetRoot, Vector3.new(0, -300, 0))
                 fireRemote("GameCorrectionEvents", "TeleportToGround")
             end
         end
@@ -4636,37 +4886,43 @@ local function applyLoopMethod(plr)
     local char = plr.Character
     if not char then return end
     local tRoot = char:FindFirstChild("HumanoidRootPart")
-    if not tRoot then return end
+    if not isBasePart(tRoot) then return end
     local method = Target_Config.LoopTargetMode
 
     -- KICK: ragdoll + see-saw line pressure
     if method == "Kick" then
         local myRoot = getRoot()
-        if myRoot then
-            tRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        if isBasePart(myRoot) then
+            safeSetLinearVelocity(tRoot, Vector3.new(0, 0, 0))
             fireRemote("CharacterEvents", "RagdollRemote")
             fireRemote("PlayerEvents", "RagdollPlayer")
             task.wait(0.01)
-            myRoot.CFrame = CFrame.lookAt(myRoot.Position, tRoot.Position)
+            safeSetCFrame(myRoot, CFrame.lookAt(myRoot.Position, tRoot.Position))
         end
     -- KILL: velocity deflection toward the void
     elseif method == "Kill" then
         local myRoot = getRoot()
-        if myRoot then
-            tRoot.AssemblyLinearVelocity = CFrame.new(myRoot.Position, tRoot.Position).LookVector * 500 + Vector3.new(0, 150, 0)
+        if isBasePart(myRoot) then
+            local dir = CFrame.new(myRoot.Position, tRoot.Position).LookVector
+            if typeof(dir) == "Vector3" then
+                safeSetLinearVelocity(tRoot, dir * 500 + Vector3.new(0, 150, 0))
+            end
         end
         fireRemote("GameCorrectionEvents", "StopAllVelocity")
     -- VOID: teleport target into the void
     elseif method == "Void" then
-        tRoot.CFrame = CFrame.new(0, -250, 0)
-        tRoot.AssemblyLinearVelocity = Vector3.new(0, -300, 0)
+        safeSetCFrame(tRoot, CFrame.new(0, -250, 0))
+        safeSetLinearVelocity(tRoot, Vector3.new(0, -300, 0))
         fireRemote("GameCorrectionEvents", "TeleportToGround")
     -- FLING: ragdoll + launch away from us
     elseif method == "Fling" then
         local myRoot = getRoot()
-        if myRoot then
-            local dir = (tRoot.Position - myRoot.Position).Unit
-            tRoot.AssemblyLinearVelocity = dir * 350 + Vector3.new(0, 200, 0)
+        if isBasePart(myRoot) then
+            local diff = tRoot.Position - myRoot.Position
+            if typeof(diff) == "Vector3" and diff.Magnitude > 0.001 then
+                local dir = diff.Unit
+                safeSetLinearVelocity(tRoot, dir * 350 + Vector3.new(0, 200, 0))
+            end
             fireRemote("CharacterEvents", "RagdollRemote")
             fireRemote("PlayerEvents", "RagdollPlayer")
         end
@@ -5198,10 +5454,9 @@ end
 end)
 print('[Gradient] OK: ftap_target.luau')
 task.wait(0.1)
+-- END MODULE: ftap_target.luau
 
--- ================================================================
 -- BEG MODULE: ftap_grabs.luau
--- ================================================================
 pcall(function()
 --[[
     ================================================================
@@ -5354,6 +5609,50 @@ local function getHumanoid()
     return char and char:FindFirstChildOfClass("Humanoid")
 end
 
+local function isBasePart(obj)
+    return obj and typeof(obj) == "Instance" and obj:IsA("BasePart")
+end
+
+local function safeSetLinearVelocity(part, velocity)
+    if not isBasePart(part) then return false end
+    if typeof(velocity) ~= "Vector3" then return false end
+    if part.Anchored then return false end
+    pcall(function()
+        if typeof(part.SetNetworkOwner) == "function" then part:SetNetworkOwner(LocalPlayer) end
+        part.AssemblyLinearVelocity = velocity
+    end)
+    return true
+end
+
+local function safeSetAngularVelocity(part, velocity)
+    if not isBasePart(part) then return false end
+    if typeof(velocity) ~= "Vector3" then return false end
+    if part.Anchored then return false end
+    pcall(function()
+        if typeof(part.SetNetworkOwner) == "function" then part:SetNetworkOwner(LocalPlayer) end
+        part.AssemblyAngularVelocity = velocity
+    end)
+    return true
+end
+
+local function safeSetCanCollide(part, value)
+    if not isBasePart(part) then return false end
+    pcall(function()
+        part.CanCollide = not not value
+    end)
+    return true
+end
+
+local function safeSetCFrame(part, cf)
+    if not isBasePart(part) then return false end
+    if typeof(cf) ~= "CFrame" then return false end
+    pcall(function()
+        if typeof(part.SetNetworkOwner) == "function" then part:SetNetworkOwner(LocalPlayer) end
+        part.CFrame = cf
+    end)
+    return true
+end
+
 -- True while FTAP's RagdollPlayerCharacter / GrabbingScript control the body.
 -- While ragdolled we must NOT write CFrame, velocities or Humanoid params.
 local function isRagdolled()
@@ -5500,9 +5799,12 @@ end
 -- Kickback negation on throw (Super Strength helper)
 local function applySuperThrow()
     local root = getRoot()
-    if not root then return end
-    root.AssemblyLinearVelocity = root.AssemblyLinearVelocity * 0.1
-    root.RotVelocity = Vector3.new(0, 0, 0)
+    if not isBasePart(root) or root.Anchored then return end
+    local vel = root.AssemblyLinearVelocity
+    if typeof(vel) == "Vector3" then
+        safeSetLinearVelocity(root, vel * 0.1)
+    end
+    safeSetAngularVelocity(root, Vector3.new(0, 0, 0))
 end
 
 -- Infinite Line Distance: patch Mouse Raycast params while enabled
@@ -5525,12 +5827,12 @@ end
 -- Noclip Grab: keep grabbed part non-colliding
 local function applyNoclipGrab()
     if not Grabs_Config.NoclipGrab then return end
-    if HeldObject and HeldObject:IsA("BasePart") then
-        HeldObject.CanCollide = false
+    if isBasePart(HeldObject) then
+        safeSetCanCollide(HeldObject, false)
     elseif GrabbedPlayer and GrabbedPlayer.Character then
         for _, part in ipairs(GrabbedPlayer.Character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
+            if isBasePart(part) then
+                safeSetCanCollide(part, false)
             end
         end
     end
@@ -5556,12 +5858,12 @@ local function applyGrabDestroyMethod(heldObj)
     local method = Grabs_Config.GrabMethod
     local char = LocalPlayer.Character
     local root = getRoot()
-    if not root then return end
+    if not isBasePart(root) then return end
 
     if method == "Kick Grab" then
         -- Repeatedly reposition collision line on the held object
-        if heldObj and heldObj:IsA("BasePart") then
-            heldObj.CFrame = root.CFrame + Vector3.new(0, 2, 5)
+        if isBasePart(heldObj) then
+            safeSetCFrame(heldObj, root.CFrame + Vector3.new(0, 2, 5))
         end
 
     elseif method == "Lag Grab" then
@@ -5569,26 +5871,29 @@ local function applyGrabDestroyMethod(heldObj)
         if heldObjectIsPlayer(heldObj) and GrabbedPlayer and GrabbedPlayer.Character then
             local hum = GrabbedPlayer.Character:FindFirstChildOfClass("Humanoid")
             if hum then
-                hum.WalkSpeed = 0
+                pcall(function() hum.WalkSpeed = 0 end)
                 task.wait(0.05)
-                hum.WalkSpeed = 16
+                pcall(function() hum.WalkSpeed = 16 end)
             end
         end
 
     elseif method == "Fling Grab" then
         -- Spin / fling the held object
-        if heldObj and heldObj:IsA("BasePart") then
-            heldObj.AssemblyLinearVelocity = (root.CFrame.LookVector * 800) + Vector3.new(0, 300, 0)
-            heldObj.AssemblyAngularVelocity = Vector3.new(50, 50, 50)
+        if isBasePart(heldObj) then
+            local look = root.CFrame.LookVector
+            if typeof(look) == "Vector3" then
+                safeSetLinearVelocity(heldObj, (look * 800) + Vector3.new(0, 300, 0))
+            end
+            safeSetAngularVelocity(heldObj, Vector3.new(50, 50, 50))
         end
 
     elseif method == "Lock Grab" then
         -- Pin the grabbed player in place
         if GrabbedPlayer and GrabbedPlayer.Character then
             local tRoot = GrabbedPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if tRoot then
-                tRoot.CFrame = root.CFrame + Vector3.new(0, 2, 5)
-                tRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            if isBasePart(tRoot) then
+                safeSetCFrame(tRoot, root.CFrame + Vector3.new(0, 2, 5))
+                safeSetLinearVelocity(tRoot, Vector3.new(0, 0, 0))
             end
         end
     end
@@ -5797,10 +6102,9 @@ end
 end)
 print('[Gradient] OK: ftap_grabs.luau')
 task.wait(0.1)
+-- END MODULE: ftap_grabs.luau
 
--- ================================================================
 -- BEG MODULE: ftap_server.luau
--- ================================================================
 pcall(function()
 --[[
     ================================================================
@@ -5929,6 +6233,38 @@ end
 local function getHumanoid()
     local char = LocalPlayer.Character
     return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function isBasePart(obj)
+    return obj and typeof(obj) == "Instance" and obj:IsA("BasePart")
+end
+
+local function safeSetLinearVelocity(part, velocity)
+    if not isBasePart(part) then return false end
+    if typeof(velocity) ~= "Vector3" then return false end
+    if part.Anchored then return false end
+    pcall(function()
+        if typeof(part.SetNetworkOwner) == "function" then part:SetNetworkOwner(LocalPlayer) end
+        part.AssemblyLinearVelocity = velocity
+    end)
+    return true
+end
+
+local function safeSetCanCollide(part, value)
+    if not isBasePart(part) then return false end
+    if type(value) ~= "boolean" then return false end
+    pcall(function() part.CanCollide = value end)
+    return true
+end
+
+local function safeSetCFrame(part, cf)
+    if not isBasePart(part) then return false end
+    if typeof(cf) ~= "CFrame" then return false end
+    pcall(function()
+        if typeof(part.SetNetworkOwner) == "function" then part:SetNetworkOwner(LocalPlayer) end
+        part.CFrame = cf
+    end)
+    return true
 end
 
 
@@ -6089,9 +6425,9 @@ local function applyLineLagMode()
         end
     elseif mode == "Mass lag" then
         for _, inst in ipairs(Workspace:GetDescendants()) do
-            if inst:IsA("BasePart") and inst:IsDescendantOf(Workspace.CurrentCamera) == false then
+            if isBasePart(inst) and inst:IsDescendantOf(Workspace.CurrentCamera) == false then
                 if inst.Anchored == false then
-                    inst.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    safeSetLinearVelocity(inst, Vector3.new(0, 0, 0))
                 end
             end
         end
@@ -6132,13 +6468,13 @@ local function applyCollideBreaker()
     local targets = findBreakerTargets(Server_Config.BreakerObject)
     local count = 0
     for _, inst in ipairs(targets) do
-        if inst:IsA("BasePart") then
-            inst.CanCollide = false
+        if isBasePart(inst) then
+            safeSetCanCollide(inst, false)
             count = count + 1
         elseif inst:IsA("Model") then
             for _, part in ipairs(inst:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = false
+                if isBasePart(part) then
+                    safeSetCanCollide(part, false)
                     count = count + 1
                 end
             end
@@ -6154,7 +6490,7 @@ local function applyDebrisBreaker()
     if not root then return 0 end
     local count = 0
     for _, inst in ipairs(Workspace:GetDescendants()) do
-        if inst:IsA("BasePart") and inst:FindFirstChildOfClass("Debris") then
+        if isBasePart(inst) and inst:FindFirstChildOfClass("Debris") then
             pcall(function() inst:Destroy() end)
             count = count + 1
             if count >= Server_Config.DebrisBreaker and Server_Config.DebrisBreaker > 0 then break end
@@ -6167,7 +6503,7 @@ end
 local function attachToMouseObject()
     local mouse = LocalPlayer:GetMouse()
     local root = getRoot()
-    if not mouse or not mouse.Target or not root then
+    if not mouse or not mouse.Target or not isBasePart(root) or not isBasePart(mouse.Target) then
         Fluent:Notify({ Title = "Attach", Content = "No target under mouse.", Duration = 2 })
         return
     end
@@ -6187,8 +6523,8 @@ end
 local function breakToPlayer(player)
     if not player or not player.Character then return end
     for _, part in ipairs(player.Character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = false
+        if isBasePart(part) then
+            safeSetCanCollide(part, false)
         end
     end
 end
@@ -6260,29 +6596,34 @@ local function KickAll()
 
     Server_Config.KickAllRunning = true
     local root = getRoot()
-    if not root then
+    if not isBasePart(root) then
         Server_Config.KickAllRunning = false
         return
     end
     local origin = root.Position
+    if typeof(origin) ~= "Vector3" then
+        Server_Config.KickAllRunning = false
+        return
+    end
 
     for _, player in ipairs(Players:GetPlayers()) do
         if not (player == LocalPlayer or Server_Config.Whitelisted[player.Name]) then
             local char = player.Character
             local tRoot = char and char:FindFirstChild("HumanoidRootPart")
-            if tRoot then
+            if isBasePart(tRoot) then
                 local angle = math.random() * math.pi * 2
                 local radius = Server_Config.PlacementRadius
                 local x = origin.X + math.cos(angle) * radius
                 local z = origin.Z + math.sin(angle) * radius
                 local y = origin.Y + Server_Config.PlacementHeight
 
-                pcall(function()
-                    tRoot.CFrame = CFrame.new(x, y, z)
-                    tRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                local targetPos = Vector3.new(x, y, z)
+                if typeof(targetPos) == "Vector3" then
+                    safeSetCFrame(tRoot, CFrame.new(targetPos))
+                    safeSetLinearVelocity(tRoot, Vector3.new(0, 0, 0))
                     fireRemote("PlayerEvents", "RagdollPlayer")
                     fireRemote("CharacterEvents", "RagdollRemote")
-                end)
+                end
             end
             task.wait(math.max(0.1, 0.02))
         end
@@ -6817,10 +7158,9 @@ end
 end)
 print('[Gradient] OK: ftap_server.luau')
 task.wait(0.1)
+-- END MODULE: ftap_server.luau
 
--- ================================================================
 -- BEG MODULE: ftap_server_auras.luau
--- ================================================================
 pcall(function()
 --[[
     ================================================================
@@ -6940,6 +7280,31 @@ local function getHumanoid()
     return char and char:FindFirstChildOfClass("Humanoid")
 end
 
+local function isBasePart(obj)
+    return obj and typeof(obj) == "Instance" and obj:IsA("BasePart")
+end
+
+local function safeSetLinearVelocity(part, velocity)
+    if not isBasePart(part) then return false end
+    if typeof(velocity) ~= "Vector3" then return false end
+    if part.Anchored then return false end
+    pcall(function()
+        if typeof(part.SetNetworkOwner) == "function" then part:SetNetworkOwner(LocalPlayer) end
+        part.AssemblyLinearVelocity = velocity
+    end)
+    return true
+end
+
+local function safeSetCFrame(part, cf)
+    if not isBasePart(part) then return false end
+    if typeof(cf) ~= "CFrame" then return false end
+    pcall(function()
+        if typeof(part.SetNetworkOwner) == "function" then part:SetNetworkOwner(LocalPlayer) end
+        part.CFrame = cf
+    end)
+    return true
+end
+
 local function getTargetRoot(plr)
     if not plr or plr == LocalPlayer then return nil end
     local char = plr.Character
@@ -7046,13 +7411,16 @@ end
 
 local function killAllPlayers()
     local myRoot = getRoot()
-    if not myRoot or isRagdolled() then return 0 end
+    if not isBasePart(myRoot) or isRagdolled() then return 0 end
     local targets = getTargetsInRange()
     local count = 0
     for _, plr in ipairs(targets) do
         local tRoot = getTargetRoot(plr)
-        if tRoot then
-            tRoot.AssemblyLinearVelocity = CFrame.new(myRoot.Position, tRoot.Position).LookVector * 500 + Vector3.new(0, 150, 0)
+        if isBasePart(tRoot) then
+            local dir = CFrame.new(myRoot.Position, tRoot.Position).LookVector
+            if typeof(dir) == "Vector3" then
+                safeSetLinearVelocity(tRoot, dir * 500 + Vector3.new(0, 150, 0))
+            end
             fireRemote("GameCorrectionEvents", "StopAllVelocity")
             count = count + 1
         end
@@ -7078,14 +7446,14 @@ end
 
 local function massBringAll()
     local myRoot = getRoot()
-    if not myRoot or isRagdolled() then return end
+    if not isBasePart(myRoot) or isRagdolled() then return end
     local targets = getTargetsInRange()
     local count = 0
     for _, plr in ipairs(targets) do
         local tRoot = getTargetRoot(plr)
-        if tRoot then
-            tRoot.CFrame = myRoot.CFrame + Vector3.new(0, 5 + count * 3, 0)
-            tRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        if isBasePart(tRoot) then
+            safeSetCFrame(tRoot, myRoot.CFrame + Vector3.new(0, 5 + count * 3, 0))
+            safeSetLinearVelocity(tRoot, Vector3.new(0, 0, 0))
             count = count + 1
         end
     end
@@ -7097,9 +7465,9 @@ local function massSendToHeaven()
     local count = 0
     for _, plr in ipairs(targets) do
         local tRoot = getTargetRoot(plr)
-        if tRoot then
-            tRoot.CFrame = CFrame.new(0, -250, 0)
-            tRoot.AssemblyLinearVelocity = Vector3.new(0, -300, 0)
+        if isBasePart(tRoot) then
+            safeSetCFrame(tRoot, CFrame.new(0, -250, 0))
+            safeSetLinearVelocity(tRoot, Vector3.new(0, -300, 0))
             fireRemote("GameCorrectionEvents", "TeleportToGround")
             count = count + 1
         end
@@ -7153,14 +7521,17 @@ end
 
 local function applyAttractionAura()
     local myRoot = getRoot()
-    if not myRoot or isRagdolled() then return end
+    if not isBasePart(myRoot) or isRagdolled() then return end
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and not isSafeTarget(plr) then
             local tRoot = getTargetRoot(plr)
-            if tRoot then
-                local dist = (myRoot.Position - tRoot.Position).Magnitude
-                if dist <= ServerAuras_Config.AuraRadius and dist > 1 then
-                    tRoot.AssemblyLinearVelocity = (myRoot.Position - tRoot.Position).Unit * ServerAuras_Config.AuraPower
+            if isBasePart(tRoot) then
+                local diff = myRoot.Position - tRoot.Position
+                if typeof(diff) == "Vector3" then
+                    local dist = diff.Magnitude
+                    if dist <= ServerAuras_Config.AuraRadius and dist > 1 then
+                        safeSetLinearVelocity(tRoot, diff.Unit * ServerAuras_Config.AuraPower)
+                    end
                 end
             end
         end
@@ -7169,16 +7540,19 @@ end
 
 local function applyFlingAura()
     local myRoot = getRoot()
-    if not myRoot or isRagdolled() then return end
+    if not isBasePart(myRoot) or isRagdolled() then return end
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and not isSafeTarget(plr) then
             local tRoot = getTargetRoot(plr)
-            if tRoot then
-                local dist = (myRoot.Position - tRoot.Position).Magnitude
-                if dist <= ServerAuras_Config.AuraRadius and dist > 1 then
-                    tRoot.AssemblyLinearVelocity = (tRoot.Position - myRoot.Position).Unit * ServerAuras_Config.AuraPower + Vector3.new(0, 80, 0)
-                    fireRemote("CharacterEvents", "RagdollRemote")
-                    fireRemote("PlayerEvents", "RagdollPlayer")
+            if isBasePart(tRoot) then
+                local diff = tRoot.Position - myRoot.Position
+                if typeof(diff) == "Vector3" then
+                    local dist = diff.Magnitude
+                    if dist <= ServerAuras_Config.AuraRadius and dist > 1 then
+                        safeSetLinearVelocity(tRoot, diff.Unit * ServerAuras_Config.AuraPower + Vector3.new(0, 80, 0))
+                        fireRemote("CharacterEvents", "RagdollRemote")
+                        fireRemote("PlayerEvents", "RagdollPlayer")
+                    end
                 end
             end
         end
@@ -7187,12 +7561,12 @@ end
 
 local function applyKickAura()
     local myRoot = getRoot()
-    if not myRoot or isRagdolled() then return end
+    if not isBasePart(myRoot) or isRagdolled() then return end
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and not isSafeTarget(plr) then
             local tRoot = getTargetRoot(plr)
-            if tRoot and (myRoot.Position - tRoot.Position).Magnitude <= ServerAuras_Config.AuraRadius then
-                tRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            if isBasePart(tRoot) and (myRoot.Position - tRoot.Position).Magnitude <= ServerAuras_Config.AuraRadius then
+                safeSetLinearVelocity(tRoot, Vector3.new(0, 0, 0))
                 fireRemote("CharacterEvents", "RagdollRemote")
                 fireRemote("PlayerEvents", "RagdollPlayer")
             end
@@ -7202,13 +7576,13 @@ end
 
 local function applyVoidAura()
     local myRoot = getRoot()
-    if not myRoot then return end
+    if not isBasePart(myRoot) then return end
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and not isSafeTarget(plr) then
             local tRoot = getTargetRoot(plr)
-            if tRoot and (myRoot.Position - tRoot.Position).Magnitude <= ServerAuras_Config.AuraRadius then
-                tRoot.CFrame = CFrame.new(0, -250, 0)
-                tRoot.AssemblyLinearVelocity = Vector3.new(0, -300, 0)
+            if isBasePart(tRoot) and (myRoot.Position - tRoot.Position).Magnitude <= ServerAuras_Config.AuraRadius then
+                safeSetCFrame(tRoot, CFrame.new(0, -250, 0))
+                safeSetLinearVelocity(tRoot, Vector3.new(0, -300, 0))
                 fireRemote("GameCorrectionEvents", "TeleportToGround")
             end
         end
@@ -7217,15 +7591,20 @@ end
 
 local function applyFollowAura()
     local myRoot = getRoot()
-    if not myRoot or isRagdolled() then return end
+    if not isBasePart(myRoot) or isRagdolled() then return end
     local followPos = myRoot.CFrame * CFrame.new(0, 0, -10)
+    if typeof(followPos) ~= "CFrame" then return end
+    local followPosition = followPos.Position
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and not isSafeTarget(plr) then
             local tRoot = getTargetRoot(plr)
-            if tRoot then
-                local dist = (followPos.Position - tRoot.Position).Magnitude
-                if dist <= ServerAuras_Config.AuraRadius and dist > 1 then
-                    tRoot.AssemblyLinearVelocity = (followPos.Position - tRoot.Position).Unit * ServerAuras_Config.AuraPower
+            if isBasePart(tRoot) then
+                local diff = followPosition - tRoot.Position
+                if typeof(diff) == "Vector3" then
+                    local dist = diff.Magnitude
+                    if dist <= ServerAuras_Config.AuraRadius and dist > 1 then
+                        safeSetLinearVelocity(tRoot, diff.Unit * ServerAuras_Config.AuraPower)
+                    end
                 end
             end
         end
@@ -7274,6 +7653,7 @@ local function getExplosionParams(method)
 end
 
 local function spawnExplosionAt(pos)
+    if typeof(pos) ~= "Vector3" then return end
     pcall(function()
         local method = ServerAuras_Config.ExplosionMethod
 
@@ -7282,9 +7662,9 @@ local function spawnExplosionAt(pos)
             for _, plr in ipairs(Players:GetPlayers()) do
                 if plr ~= LocalPlayer then
                     local tRoot = getTargetRoot(plr)
-                    if tRoot and (pos - tRoot.Position).Magnitude <= ServerAuras_Config.ExplosionRadius then
-                        tRoot.CFrame = CFrame.new(0, -250, 0)
-                        tRoot.AssemblyLinearVelocity = Vector3.new(0, -300, 0)
+                    if isBasePart(tRoot) and (pos - tRoot.Position).Magnitude <= ServerAuras_Config.ExplosionRadius then
+                        safeSetCFrame(tRoot, CFrame.new(0, -250, 0))
+                        safeSetLinearVelocity(tRoot, Vector3.new(0, -300, 0))
                         fireRemote("GameCorrectionEvents", "TeleportToGround")
                     end
                 end
@@ -7296,8 +7676,10 @@ local function spawnExplosionAt(pos)
             for _, plr in ipairs(Players:GetPlayers()) do
                 if plr ~= LocalPlayer then
                     local tRoot = getTargetRoot(plr)
-                    if tRoot and (pos - tRoot.Position).Magnitude <= ServerAuras_Config.ExplosionRadius then
-                        tRoot.AssemblyLinearVelocity = tRoot.AssemblyLinearVelocity + Vector3.new(0, 150, 0)
+                    if isBasePart(tRoot) and (pos - tRoot.Position).Magnitude <= ServerAuras_Config.ExplosionRadius then
+                        if isBasePart(tRoot) and typeof(tRoot.AssemblyLinearVelocity) == "Vector3" then
+                            safeSetLinearVelocity(tRoot, tRoot.AssemblyLinearVelocity + Vector3.new(0, 150, 0))
+                        end
                     end
                 end
             end
@@ -7318,11 +7700,11 @@ end
 
 local function explosionTargets()
     local myRoot = getRoot()
-    if not myRoot then return end
+    if not isBasePart(myRoot) then return end
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer then
             local tRoot = getTargetRoot(plr)
-            if tRoot and (myRoot.Position - tRoot.Position).Magnitude <= ServerAuras_Config.MassRadius then
+            if isBasePart(tRoot) and (myRoot.Position - tRoot.Position).Magnitude <= ServerAuras_Config.MassRadius then
                 spawnExplosionAt(tRoot.Position)
             end
         end
@@ -7371,14 +7753,14 @@ local objectAuraLastScan = 0
 -- Re-scan parts inside radius (heavy GetDescendants throttled to 0.5s)
 local function scanObjectAuraParts()
     local myRoot = getRoot()
-    if not myRoot then return end
+    if not isBasePart(myRoot) then return end
     local now = os.clock()
     if now - objectAuraLastScan < 0.5 then return end
     objectAuraLastScan = now
     table.clear(objectAuraParts)
     local char = LocalPlayer.Character
     for _, inst in ipairs(Workspace:GetDescendants()) do
-        if inst:IsA("BasePart") and inst.Anchored == false then
+        if isBasePart(inst) and inst.Anchored == false then
             if not char or not inst:IsDescendantOf(char) then
                 if (inst.Position - myRoot.Position).Magnitude <= ServerAuras_Config.ObjectAuraRadius then
                     objectAuraParts[inst] = true
@@ -7390,24 +7772,32 @@ end
 
 local function applyObjectAuraToParts()
     local myRoot = getRoot()
-    if not myRoot or isRagdolled() then return end
+    if not isBasePart(myRoot) or isRagdolled() then return end
     scanObjectAuraParts()
     local speed = ServerAuras_Config.ObjectAuraSpeed
     local mode = ServerAuras_Config.ObjectAuraMode
     for part in pairs(objectAuraParts) do
         if part and part.Parent then
             pcall(function()
+                if not isBasePart(part) then return end
                 local diff = part.Position - myRoot.Position
+                if typeof(diff) ~= "Vector3" then return end
                 local dist = math.max(diff.Magnitude, 1)
                 if mode == "Object Tornado" then
                     local up = Vector3.new(0, 1, 0)
                     local tangent = diff.Unit:Cross(up)
                     if tangent.Magnitude < 0.01 then tangent = Vector3.new(1, 0, 0) end
-                    part.AssemblyLinearVelocity = tangent.Unit * speed + Vector3.new(0, speed * 0.4, 0)
+                    safeSetLinearVelocity(part, tangent.Unit * speed + Vector3.new(0, speed * 0.4, 0))
                 elseif mode == "Object Aura" then
-                    part.AssemblyLinearVelocity = (myRoot.Position - part.Position).Unit * speed
+                    local pullDiff = myRoot.Position - part.Position
+                    if typeof(pullDiff) == "Vector3" and pullDiff.Magnitude > 0.001 then
+                        safeSetLinearVelocity(part, pullDiff.Unit * speed)
+                    end
                 elseif mode == "Object Float" then
-                    part.AssemblyLinearVelocity = Vector3.new(part.AssemblyLinearVelocity.X, speed, part.AssemblyLinearVelocity.Z)
+                    local v = part.AssemblyLinearVelocity
+                    if typeof(v) == "Vector3" then
+                        safeSetLinearVelocity(part, Vector3.new(v.X, speed, v.Z))
+                    end
                 end
             end)
         end
@@ -7632,10 +8022,9 @@ end
 end)
 print('[Gradient] OK: ftap_server_auras.luau')
 task.wait(0.1)
+-- END MODULE: ftap_server_auras.luau
 
--- ================================================================
 -- BEG MODULE: ftap_misc.luau
--- ================================================================
 pcall(function()
 --[[
     ================================================================
@@ -7761,6 +8150,21 @@ end
 local function getHumanoid()
     local char = LocalPlayer.Character
     return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function isBasePart(obj)
+    return obj and typeof(obj) == "Instance" and obj:IsA("BasePart")
+end
+
+local function safeSetLinearVelocity(part, velocity)
+    if not isBasePart(part) then return false end
+    if typeof(velocity) ~= "Vector3" then return false end
+    if part.Anchored then return false end
+    pcall(function()
+        if typeof(part.SetNetworkOwner) == "function" then part:SetNetworkOwner(LocalPlayer) end
+        part.AssemblyLinearVelocity = velocity
+    end)
+    return true
 end
 
 local LimbOptions = {"Torso", "Head", "Left Arm", "Right Arm", "Left Leg", "Right Leg"}
@@ -8149,7 +8553,7 @@ end
 local function applyMagnetAura()
     local char = LocalPlayer.Character
     local root = getRoot()
-    if not char or not root then return end
+    if not char or not isBasePart(root) then return end
     -- Purple vortex — pull nearby parts toward the player
     -- Heavy GetDescendants sweep is throttled to at most 1x/s
     local now = os.clock()
@@ -8157,12 +8561,10 @@ local function applyMagnetAura()
     AuraMagnetLastScan = now
     pcall(function()
         for _, inst in ipairs(Workspace:GetDescendants()) do
-            if inst:IsA("BasePart") and inst:IsDescendantOf(char) == false and inst.Anchored == false then
+            if isBasePart(inst) and inst:IsDescendantOf(char) == false and inst.Anchored == false then
                 local dist = (inst.Position - root.Position).Magnitude
-                if dist < 40 then
-                    pcall(function()
-                        inst.AssemblyLinearVelocity = (root.Position - inst.Position).Unit * 60
-                    end)
+                if dist < 40 and dist > 0.001 then
+                    safeSetLinearVelocity(inst, (root.Position - inst.Position).Unit * 60)
                 end
             end
         end
@@ -8662,10 +9064,9 @@ end
 end)
 print('[Gradient] OK: ftap_misc.luau')
 task.wait(0.1)
+-- END MODULE: ftap_misc.luau
 
--- ================================================================
 -- BEG MODULE: ftap_watermark.luau
--- ================================================================
 pcall(function()
 --[[
     ================================================================
@@ -8812,10 +9213,9 @@ print("[Gradient Hub] Watermark loaded.")
 end)
 print('[Gradient] OK: ftap_watermark.luau')
 task.wait(0.1)
+-- END MODULE: ftap_watermark.luau
 
--- ================================================================
 -- BEG MODULE: ftap_info.luau
--- ================================================================
 pcall(function()
 --[[
     ================================================================
@@ -8979,4 +9379,27 @@ Tabs.Info:AddParagraph({
 end)
 print('[Gradient] OK: ftap_info.luau')
 task.wait(0.1)
+-- END MODULE: ftap_info.luau
+    print("[Gradient] (monolithic build)!")
 
+    -- Auto-select the first tab once every module finished adding tabs,
+    -- so the horizontal interface opens ready to use.
+    task.delay(0.2, function()
+        pcall(function()
+            if _G.GradientLayout and _G.GradientLayout.selectScreen then
+                _G.GradientLayout.selectScreen(1)
+            end
+        end)
+    end)
+end)
+
+-- ================================================================
+-- Top-level guard: nothing above is unprotected, so no "attempt to
+-- call a nil value" can escape. On failure report which variable is
+-- empty / what errored.
+-- ================================================================
+if not GradientInitStatus then
+    print("[Gradient] FATAL init error: " .. tostring(GradientInitErr))
+    print(("[Gradient] Diagnostics: GradientFluent=%s | GradientWindow=%s | GradientTabs=%s (all must be 'table')")
+        :format(type(_G.GradientFluent), type(_G.GradientWindow), type(_G.GradientTabs)))
+end
