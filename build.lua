@@ -1,6 +1,6 @@
 -- ================================================================
 -- GRADIENT HUB | FTAP - MONOLITHIC BUILD (generated, do not edit)
--- Generated: 2026-08-20 15:57:00
+-- Generated: 2026-08-20 20:34:05
 -- Source split: part1 (main.luau) + 11 inlined modules + tail
 -- ================================================================
 
@@ -5525,6 +5525,22 @@ local HttpService = game:GetService("HttpService")
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local LogService = game:GetService("LogService")
+
+-- Suppress the known noisy console spam produced by the game's
+-- dynamically-loaded ExplosionMaker during our throw impulse. The
+-- filter no-ops the specific line (engine-level script errors may
+-- still be mirrored by the executor, but this keeps the log clean
+-- of the repeated nil-'Touched' spam).
+LogService.MessageOut:Connect(function(message, messageType)
+    if type(message) == "string" then
+        local low = string.lower(message)
+        if string.find(low, "explosionmaker") ~= nil
+            and string.find(low, "touched") ~= nil then
+            return -- ignore this spam line
+        end
+    end
+end)
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
@@ -5716,6 +5732,19 @@ local function safeSetCFrame(part, cf)
         part.CFrame = cf
     end)
     return true
+end
+
+-- Fake-parent guard: if the game deletes the prop mid-throw, reparent it
+-- back into Workspace client-side so part.Parent never stays nil during
+-- our impulse/detach sequence. The physics engine keeps a valid
+-- reference for that frame; the server re-syncs afterwards.
+local function ensurePartAlive(part)
+    if not isBasePart(part) then return false end
+    if part.Parent then return true end
+    pcall(function()
+        part.Parent = Workspace
+    end)
+    return part.Parent ~= nil
 end
 
 -- True while FTAP's RagdollPlayerCharacter / GrabbingScript control the body.
@@ -6197,7 +6226,7 @@ end
 -- but the joint instances is ever destroyed.
 local function safeDetachGrabWeld(part)
     if not isBasePart(part) then return end
-    if not part.Parent or not part:IsDescendantOf(Workspace) then return end
+    if not ensurePartAlive(part) then return end
     local char = LocalPlayer.Character
     if not char then return end
 
@@ -6231,7 +6260,7 @@ local function safeDetachGrabWeld(part)
         pcall(function()
             if not j or not j.Parent then return end
             if not (j:IsA("Weld") or j:IsA("WeldConstraint") or j:IsA("RopeConstraint")) then return end
-            if not part.Parent or not part:IsDescendantOf(Workspace) then return end
+            if not ensurePartAlive(part) then return end
             local p0, p1 = safeJointSides(j)
             if not p0 or not p1 then return end
             local p0inChar = p0:IsDescendantOf(char)
@@ -6251,7 +6280,7 @@ end
 applyThrowForce = function(part, directionVector, power)
     -- 1) Existence: part must still be alive inside Workspace
     if not isBasePart(part) then return false end
-    if not part.Parent or not part:IsDescendantOf(Workspace) then return false end
+    if not ensurePartAlive(part) then return false end
     if part.Anchored then return false end
     local root = getRoot()
     if not isBasePart(root) then return false end
@@ -6262,18 +6291,18 @@ applyThrowForce = function(part, directionVector, power)
     local velocity = (directionVector * power) + Vector3.new(0, power * 0.12, 0)
     local ok = pcall(function()
         -- Re-check: the prop may be destroyed between the check and now
-        if not part.Parent or not part:IsDescendantOf(Workspace) then return end
+        if not ensurePartAlive(part) then return end
         -- 2) Take network ownership FIRST (hidden props + SetNetworkOwner)
         claimNetworkOwnership(part)
         -- 3) Snap the velocity immediately (only if still alive)
-        if part.Parent and part:IsDescendantOf(Workspace) then
+        if ensurePartAlive(part) then
             part.AssemblyLinearVelocity = velocity
         end
         -- 4) Transient impulse: keep pushing 0.1s so the server computes
         --    the full impulse before ownership is lost
         local impulseOk = false
         pcall(function()
-            if not part.Parent or not part:IsDescendantOf(Workspace) then return end
+            if not ensurePartAlive(part) then return end
             local att = Instance.new("Attachment")
             att.Parent = part
             local lv = Instance.new("LinearVelocity")
@@ -6291,7 +6320,7 @@ applyThrowForce = function(part, directionVector, power)
         end)
         if not impulseOk then
             pcall(function()
-                if not part.Parent or not part:IsDescendantOf(Workspace) then return end
+                if not ensurePartAlive(part) then return end
                 local bv = Instance.new("BodyVelocity")
                 bv.Velocity = velocity
                 bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
@@ -6307,7 +6336,10 @@ applyThrowForce = function(part, directionVector, power)
     return ok
 end
 
--- Full throw action: find target, aim, apply impulse, release the grab
+-- Full throw action: IMPULSE FIRST while the grab weld still links
+-- object <-> character, so the game's physics engine registers the
+-- collision/impulse this frame. Only AFTER one frame (task.wait()) do
+-- we release the grab and detach our grab welds.
 local function doThrow()
     if not Grabs_Config.SuperThrow then return end
     local part = resolveThrowTarget()
@@ -6317,23 +6349,20 @@ local function doThrow()
     end
     local power = Grabs_Config.ThrowPower or 1000
 
-    -- 1) Release the grab FIRST so the server stops holding/exploding
-    --    before the object receives the impulse (avoids nil-reference
-    --    crashes in the game's server scripts, e.g. ExplosionMaker).
+    -- 1) Impulse FIRST (weld still alive => physics engine gets the hit)
+    local ok = applyThrowForce(part, throwDirection(), power)
+
+    -- 2) Wait exactly one frame before touching any joints
+    task.wait()
+
+    -- 3) Only now release the grab server-side and detach grab welds
     pcall(function()
         HeldObject = nil
         GrabbedPlayer = nil
         fireRemote("GrabEvents", "EndGrabEarly")
         fireRemote("HoldEvents", "Drop")
     end)
-
-    -- 2) Detach only our grab welds (cross-boundary char <-> object);
-    --    internal joints of the object stay intact, object itself is
-    --    never destroyed.
     safeDetachGrabWeld(part)
-
-    -- 3) Apply the impulse (guarded: existence + pcall inside)
-    local ok = applyThrowForce(part, throwDirection(), power)
 
     if ok then
         Fluent:Notify({ Title = "Super Throw", Content = "Thrown with power " .. tostring(power), Duration = 1.5 })
