@@ -127,7 +127,10 @@ local Grabs_Config = {
     RagdollGrab = false,
 
     GrabMethod = "Kick Grab",
-    GrabMethodEnabled = false
+    GrabMethodEnabled = false,
+
+    AutoGrab = false,
+    GrabRadius = 25
 }
 
 local HeldObject = nil
@@ -324,6 +327,80 @@ local function monitorGrabChange()
         end
     end)
 end
+
+
+-- ================================================================
+-- AUTO-GRAB / NETWORK CLAIM (client-side physics takeover)
+-- Claims nearby BaseParts (incl. Blobman / Ragdoll models) by forcing
+-- the client to simulate them, then nudging their velocity. Every
+-- injector call is guarded (typeof + pcall) so it is safe anywhere.
+-- ================================================================
+
+-- Order matters: hidden network properties FIRST, velocity AFTER.
+local function claimNetworkOwnership(part)
+    if not isBasePart(part) or part.Anchored then return false end
+    pcall(function()
+        -- 1) Expand the executor's simulation radius (if supported)
+        if typeof(setsimulationradius) == "function" then
+            setsimulationradius(math.huge, math.huge)
+        end
+        -- 2) Take the part out of server-side simulation BEFORE any
+        --    velocity write, so the client actually controls it.
+        if typeof(sethiddenproperty) == "function" then
+            sethiddenproperty(part, "NetworkIsServerPosition", false)
+        end
+        -- 3) Request ownership through the standard API when possible
+        if typeof(part.SetNetworkOwner) == "function" then
+            part:SetNetworkOwner(LocalPlayer)
+        end
+    end)
+    return true
+end
+
+local function forceGrabPart(part)
+    if not isBasePart(part) or part.Anchored then return end
+    pcall(function()
+        -- Hidden ownership properties FIRST...
+        claimNetworkOwnership(part)
+        -- ...then, and ONLY then, write the velocity.
+        part.AssemblyLinearVelocity = Vector3.new(0, 35, 0)
+    end)
+end
+
+-- Auto-grab heartbeat: cheap toggle check every frame; the heavy
+-- GetDescendants scan is throttled to 0.1s.
+local autoGrabLastScan = 0
+RunService.Heartbeat:Connect(function()
+    if not Grabs_Config.AutoGrab then return end
+
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not isBasePart(hrp) then return end
+
+    local now = os.clock()
+    if now - autoGrabLastScan < 0.1 then return end
+    autoGrabLastScan = now
+
+    pcall(function()
+        local radius = Grabs_Config.GrabRadius or 25
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            local name = string.lower(obj.Name or "")
+            local isBlobLike = string.find(name, "blob") ~= nil or string.find(name, "ragdoll") ~= nil
+
+            if isBasePart(obj) then
+                if (obj.Position - hrp.Position).Magnitude <= radius then
+                    forceGrabPart(obj)
+                end
+            elseif obj:IsA("Model") and isBlobLike then
+                for _, child in ipairs(obj:GetDescendants()) do
+                    if isBasePart(child) and (child.Position - hrp.Position).Magnitude <= radius then
+                        forceGrabPart(child)
+                    end
+                end
+            end
+        end
+    end)
+end)
 
 
 -- ================================================================
@@ -541,6 +618,20 @@ InfiniteLineToggle:OnChanged(function(Value) Grabs_Config.InfiniteLine = Value e
 
 local RagdollGrabToggle = Tabs.Grabs:AddToggle("RagdollGrabToggle", { Title = "Ragdoll Grab", Default = false })
 RagdollGrabToggle:OnChanged(function(Value) Grabs_Config.RagdollGrab = Value end)
+
+Tabs.Grabs:AddSection("Auto-Grab / Network Claim")
+
+local AutoGrabToggle = Tabs.Grabs:AddToggle("AutoGrabToggle", { Title = "Enable Auto-Grab / Network Claim", Default = false })
+AutoGrabToggle:OnChanged(function(Value) Grabs_Config.AutoGrab = Value end)
+
+Tabs.Grabs:AddSlider("GrabRadiusSlider", {
+    Title = "Grab Radius",
+    Default = 25,
+    Min = 5,
+    Max = 100,
+    Rounding = 0,
+    Callback = function(Value) Grabs_Config.GrabRadius = Value end
+})
 
 Tabs.Grabs:AddSection("Grab Destroy Method")
 
