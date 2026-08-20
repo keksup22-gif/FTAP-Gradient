@@ -153,7 +153,11 @@ local Grabs_Config = {
 
     SuperThrow = false,
     ThrowPower = 1000,
-    ThrowKey = "F"
+    ThrowKey = "F",
+
+    Magnet = false,
+    BringPlayers = false,
+    MagnetRadius = 40
 }
 
 local HeldObject = nil
@@ -871,6 +875,121 @@ local function debouncedThrow()
     pcall(doThrow)
 end
 
+
+-- ================================================================
+-- AUTO-BRING / MAGNET (Module 4)
+-- Attracts free props (Parts / Models without a Humanoid) to the
+-- player and optionally pulls nearby players in. Every CFrame /
+-- velocity manipulation is pcall-guarded with IsDescendantOf checks.
+-- ================================================================
+
+-- True if the part belongs to ANY player character (or any model that
+-- has a Humanoid, e.g. ragdolls) - such parts are never magnetized.
+local function belongsToAnyPlayer(part)
+    local p = part
+    while p do
+        if p:IsA("Model") and p:FindFirstChildOfClass("Humanoid") then
+            return true
+        end
+        p = p.Parent
+    end
+    return false
+end
+
+-- Bring one free prop: velocity pull when far, snap to hand when near
+local function magnetProp(part, root)
+    if not isBasePart(part) then return end
+    pcall(function()
+        if not part.Parent or not part:IsDescendantOf(Workspace) then return end
+        if part.Anchored then return end
+        if part == HeldObject then return end -- never yank our own grab
+        if belongsToAnyPlayer(part) then return end
+        local rootPos = root.Position
+        if typeof(rootPos) ~= "Vector3" then return end
+        local dist = (part.Position - rootPos).Magnitude
+        if dist > (Grabs_Config.MagnetRadius or 40) then return end
+
+        claimNetworkOwnership(part)
+
+        if dist > 8 then
+            -- Attract: pull the prop toward the player
+            local dir = (rootPos - part.Position).Unit
+            part.AssemblyLinearVelocity = dir * (dist * 4)
+        else
+            -- Snap: teleport the prop to the player's hand area
+            local target = rootPos + root.CFrame.LookVector * 4 + Vector3.new(0, 3, 0)
+            part.CFrame = CFrame.new(target)
+            part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            part.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+        end
+    end)
+end
+
+-- Bring one player: velocity pull toward our character
+local function bringPlayer(player, root)
+    if not player or player == LocalPlayer then return end
+    local char = player.Character
+    local target = char and char:FindFirstChild("HumanoidRootPart")
+    if not isBasePart(target) then return end
+    pcall(function()
+        if not target.Parent or not target:IsDescendantOf(Workspace) then return end
+        local rootPos = root.Position
+        local dist = (target.Position - rootPos).Magnitude
+        if dist > (Grabs_Config.MagnetRadius or 40) then return end
+        if HeldObject and (target == HeldObject or target:IsDescendantOf(HeldObject)) then return end
+        claimNetworkOwnership(target)
+        local dir = (rootPos - target.Position).Unit
+        target.AssemblyLinearVelocity = dir * 60
+    end)
+end
+
+-- Magnet tick: throttled scan (0.1s), guarded end-to-end
+local magnetTick = makeThrottled(0.1)
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        magnetTick(function()
+            if not Grabs_Config.Magnet then return end
+            local char = LocalPlayer.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if not isBasePart(root) then return end
+            if not root.Parent or not root:IsDescendantOf(Workspace) then return end
+            if root.Anchored then return end
+
+            -- Bring free props
+            pcall(function()
+                for _, obj in ipairs(Workspace:GetDescendants()) do
+                    if obj:IsA("BasePart") then
+                        magnetProp(obj, root)
+                    elseif obj:IsA("Model") and not obj:FindFirstChildOfClass("Humanoid") then
+                        local pp = obj.PrimaryPart
+                        if isBasePart(pp) then
+                            magnetProp(pp, root)
+                        else
+                            -- Fallback: first BasePart in the model
+                            for _, child in ipairs(obj:GetDescendants()) do
+                                if child:IsA("BasePart") then
+                                    magnetProp(child, root)
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+
+            -- Bring players
+            if Grabs_Config.BringPlayers then
+                pcall(function()
+                    for _, plr in ipairs(Players:GetPlayers()) do
+                        bringPlayer(plr, root)
+                    end
+                end)
+            end
+        end)
+    end
+end)
+
 -- Infinite Line Distance: patch Mouse Raycast params while enabled
 local Original_RaycastParams = nil
 local RayParams = Instance.new("RaycastParams")
@@ -1102,6 +1221,23 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         debouncedThrow()
     end
 end)
+
+Tabs.Grabs:AddSection("Auto-Bring / Magnet (Module 4)")
+
+local MagnetToggle = Tabs.Grabs:AddToggle("MagnetToggle", { Title = "Enable Magnet", Default = false })
+MagnetToggle:OnChanged(function(Value) Grabs_Config.Magnet = Value end)
+
+local BringPlayersToggle = Tabs.Grabs:AddToggle("BringPlayersToggle", { Title = "Bring Players", Default = false })
+BringPlayersToggle:OnChanged(function(Value) Grabs_Config.BringPlayers = Value end)
+
+Tabs.Grabs:AddSlider("MagnetRadiusSlider", {
+    Title = "Magnet Radius",
+    Default = 40,
+    Min = 5,
+    Max = 150,
+    Rounding = 0,
+    Callback = function(Value) Grabs_Config.MagnetRadius = Value end
+})
 
 Tabs.Grabs:AddSection("Auto-Grab / Network Claim")
 
