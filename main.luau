@@ -128,11 +128,11 @@ local GradientInitStatus, GradientInitErr = pcall(function()
     -- ================================================================
     local tabSpecs = {
         { key = "Protections", title = "Protections", icon = "shield" },
-        { key = "Movement", title = "Movement", icon = "person-standing" },
-        { key = "Combat", title = "Combat", icon = "swords" },
+        { key = "Movement", title = "Local Player & Protection", icon = "person-standing" },
+        { key = "Combat", title = "Combat & Grabs", icon = "swords" },
         { key = "Visuals", title = "Visuals", icon = "eye" },
-        { key = "Server", title = "Server", icon = "server" },
-        { key = "Misc", title = "Misc", icon = "wrench" },
+        { key = "Server", title = "Server & Auras", icon = "server" },
+        { key = "Misc", title = "Misc & Settings", icon = "wrench" },
         { key = "Settings", title = "Settings", icon = "settings" },
         { key = "Info", title = "Info", icon = "info" }
     }

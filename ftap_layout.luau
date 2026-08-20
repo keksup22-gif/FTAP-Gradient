@@ -1,13 +1,13 @@
 --[[
     ================================================================
-    Gradient Hub - Layout & Style Engine
-    Converts the shared Fluent window to a HORIZONTAL top tab bar
-    (Fluid-style) and applies a premium glass-gradient theme:
-      * 8 tab pills laid out in one row on top of the window
-      * custom gradient accent colors, strokes, rounded glass panels
-      * animated accent underline under the active tab
-      * clean spacing + re-positioned page header / content area
-    Runs from main.luau right after the window is created.
+    Gradient Hub - Layout & Style Engine (VERTICAL SIDE BAR)
+    Uses Fluent's native vertical tab sidebar (TabWidth = 160) and
+    only applies premium glass-gradient styling on top of it:
+      * left sidebar with rounded glass panel + gradient sheen
+      * accent underline bar on the left edge of the active tab
+      * gradient window surface + top accent strip
+    Fluent's own motors handle the sidebar geometry, so this module
+    never fights them (no horizontal conversions, no overrides).
     File: ftap_layout.luau
     ================================================================
 --]]
@@ -22,9 +22,7 @@ local state = {
     underline = nil,
     selected = nil,
     selectedIndex = 1,
-    tabW = 70,
-    tabH = 32,
-    barH = 38,
+    tabW = 160,
 }
 
 local function getTabButtons(holder)
@@ -48,6 +46,7 @@ local function applySelectedStroke()
     end
 end
 
+-- Vertical accent bar on the LEFT edge of the active tab
 local function positionUnderline()
     local w, bar, underline = state.window, state.bar, state.underline
     if not underline then return end
@@ -56,24 +55,24 @@ local function positionUnderline()
         underline.Visible = false
         return
     end
-    local ok, x, wid = pcall(function()
-        local ax = btn.AbsolutePosition
-        local bx = bar.AbsolutePosition
-        return ax.X - bx.X, btn.AbsoluteSize.X
+    local ok, y, h = pcall(function()
+        local ay = btn.AbsolutePosition
+        local by = bar.AbsolutePosition
+        return ay.Y - by.Y, btn.AbsoluteSize.Y
     end)
     if not ok then
         underline.Visible = false
         return
     end
-    underline.Size = UDim2.fromOffset(wid, 4)
-    underline.Position = UDim2.new(0, x, 0, state.barH - 3)
-    underline.Visible = wid > 4
+    underline.Size = UDim2.fromOffset(3, h - 8)
+    underline.Position = UDim2.new(0, 2, 0, y + 4)
+    underline.Visible = true
 end
 
 local cornerRadius = 8
 
 local function styleTab(btn)
-    btn.Size = UDim2.fromOffset(state.tabW, state.tabH)
+    btn.Size = UDim2.new(1, 0, 0, 34)
     btn.ZIndex = 3
     btn.AutoButtonColor = false
     for _, child in ipairs(btn:GetChildren()) do
@@ -113,7 +112,8 @@ local function instanceNewCorner(instance, radius)
 end
 
 -- ================================================================
--- Layout.patch(window) - core conversion + premium styling
+-- Layout.patch(window) - premium styling over Fluent's native
+-- vertical sidebar. Geometry stays 100% Fluent-managed.
 -- ================================================================
 
 function Layout.patch(window)
@@ -127,14 +127,12 @@ function Layout.patch(window)
         state.window = w
         state.bar = bar
 
-        -- 1) Tab bar moved to the TOP of the window
-        bar.Size = UDim2.new(1, -24, 0, state.barH)
-        bar.Position = UDim2.new(0, 12, 0, 52)
+        -- 1) Sidebar glass panel (Fluent keeps its own size/position:
+        --    UDim2.new(0, TabWidth, 1, -66) at (12, 54) - untouched)
         bar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
         bar.BackgroundTransparency = 0.88
         bar.BorderSizePixel = 0
 
-        -- glass bar: rounded corners + gradient sheen + soft stroke
         local barCorner = Instance.new("UICorner")
         barCorner.CornerRadius = UDim.new(0, 12)
         barCorner.Name = "GradientBarCorner"
@@ -156,24 +154,19 @@ function Layout.patch(window)
         barStroke.Color = Color3.fromRGB(255, 255, 255)
         barStroke.Parent = bar
 
-        -- 2) Horizontal scrolling tab holder (proper Fluent properties)
-        holder.ScrollingDirection = Enum.ScrollingDirection.X
+        -- 2) Vertical tab list (Fluent default). We only keep the
+        --    scrollbars hidden and sync the canvas height safely.
+        holder.ScrollingDirection = Enum.ScrollingDirection.Y
         holder.ScrollBarImageTransparency = 1
         holder.BorderSizePixel = 0
 
         local lay = holder:FindFirstChildOfClass("UIListLayout")
         if lay then
-            lay.FillDirection = Enum.FillDirection.Horizontal
+            lay.FillDirection = Enum.FillDirection.Vertical
             lay.HorizontalAlignment = Enum.HorizontalAlignment.Left
-            lay.VerticalAlignment = Enum.VerticalAlignment.Center
+            lay.VerticalAlignment = Enum.VerticalAlignment.Top
             lay.Padding = UDim.new(4, 0)
 
-            -- CanvasSize sync, guarded against re-entrancy: writing
-            -- CanvasSize inside an AbsoluteContentSizeChanged handler can
-            -- re-fire the SAME event in the same call stack and hit
-            -- "Maximum event re-entrancy depth exceeded". A lock flag plus
-            -- task.defer move the write to the next scheduler tick so the
-            -- event can never re-enter itself synchronously.
             local syncingCanvas = false
             lay:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
                 if syncingCanvas then return end
@@ -181,22 +174,20 @@ function Layout.patch(window)
                 task.defer(function()
                     local okSync = pcall(function()
                         if lay and holder then
-                            local ax = lay.AbsoluteContentSize and lay.AbsoluteContentSize.X or 0
-                            holder.CanvasSize = UDim2.new(0, ax + 4, 0, 0)
+                            local ay = lay.AbsoluteContentSize and lay.AbsoluteContentSize.Y or 0
+                            holder.CanvasSize = UDim2.new(0, 0, 0, ay + 4)
                         end
                     end)
                     syncingCanvas = false
                     return okSync
                 end)
             end)
-            local ax0 = lay.AbsoluteContentSize and lay.AbsoluteContentSize.X or 0
-            holder.CanvasSize = UDim2.new(0, ax0 + 4, 0, 0)
+            local ay0 = lay.AbsoluteContentSize and lay.AbsoluteContentSize.Y or 0
+            holder.CanvasSize = UDim2.new(0, 0, 0, ay0 + 4)
         end
 
-        -- 3) Accent underline (bottom of active tab) - DEDICATED frame.
-        --    Never reuse Fluent's motor-driven selector (Fluent's
-        --    SelectorPosMotor/SelectorSizeMotor animate it every frame,
-        --    which caused size/position races and a broken top bar).
+        -- 3) Accent underline: dedicated frame on the left edge of the
+        --    active tab. NOT Fluent's selector (D) - no motor conflicts.
         local underline = bar:FindFirstChild("GradientUnderline")
         if not underline then
             underline = Instance.new("Frame")
@@ -205,17 +196,17 @@ function Layout.patch(window)
             underline.Parent = bar
         end
         underline.Name = "GradientUnderline"
-        underline.AnchorPoint = Vector2.new(0, 1)
+        underline.AnchorPoint = Vector2.new(0, 0.5)
         underline.ZIndex = 4
         underline.BorderSizePixel = 0
-        underline.Size = UDim2.fromOffset(0, 4)
-        underline.Position = UDim2.new(0, 0, 0, state.barH - 3)
+        underline.Size = UDim2.fromOffset(3, 0)
+        underline.Position = UDim2.new(0, 2, 0, 0)
         underline.Visible = false
         local existingCorner = underline:FindFirstChildOfClass("UICorner")
         if existingCorner then
-            existingCorner.CornerRadius = UDim.new(0, 4)
+            existingCorner.CornerRadius = UDim.new(1, 0)
         else
-            instanceNewCorner(underline, 4)
+            instanceNewCorner(underline, 2)
         end
         local underlineGrad = Instance.new("UIGradient")
         underlineGrad.Name = "GradientUnderlineGradient"
@@ -227,13 +218,11 @@ function Layout.patch(window)
         underlineGrad.Parent = underline
         state.underline = underline
 
-        -- 4) Keep the content-area motor for our horizontal design, but stop
-        --    fighting Fluent's selector motors (they animate Fluent's own
-        --    selector frame every frame, not our underline).
-        w.ContainerPosMotor:onStep(function(K)
-            K = (type(K) == "number" and K) or 0
-            w.ContainerHolder.Position = UDim2.fromOffset(12, K + 34)
-        end)
+        -- 4) Fluent natively adapts the content area to the sidebar:
+        --    ContainerHolder.Size = (1, -TabWidth-32, 1, -102) at
+        --    (TabWidth+26, 90) and TabDisplay at (TabWidth+26, 56).
+        --    No overrides needed - we only refresh the underline when
+        --    the tab list scrolls.
         w.TabHolder:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
             positionUnderline()
         end)
@@ -248,19 +237,18 @@ function Layout.patch(window)
             end
         end)
 
-        -- 5b) Layout watchdog: every 0.5s re-assert the horizontal
-        --     layout and restyle any tab button that lost its styling
-        --     (covers buttons added after patch / executor hiccups).
+        -- 5b) Layout watchdog: re-assert vertical layout + restyle any
+        --     tab button that lost its styling.
         task.spawn(function()
             while task.wait(0.5) do
                 pcall(function()
                     local lay2 = holder:FindFirstChildOfClass("UIListLayout")
                     if lay2 then
-                        lay2.FillDirection = Enum.FillDirection.Horizontal
+                        lay2.FillDirection = Enum.FillDirection.Vertical
                         lay2.HorizontalAlignment = Enum.HorizontalAlignment.Left
-                        lay2.VerticalAlignment = Enum.VerticalAlignment.Center
-                        lay2.Padding = UDim.new(4, 0)
+                        lay2.VerticalAlignment = Enum.VerticalAlignment.Top
                     end
+                    holder.ScrollingDirection = Enum.ScrollingDirection.Y
                     for _, btn2 in ipairs(getTabButtons(holder)) do
                         if not btn2:FindFirstChild("GradientTabStroke") then
                             styleTab(btn2)
@@ -270,18 +258,7 @@ function Layout.patch(window)
             end
         end)
 
-        -- 6) Content area below the tab bar + header
-        w.ContainerHolder.Size = UDim2.new(1, -24, 1, -156)
-        w.ContainerHolder.Position = UDim2.fromOffset(12, 128)
-
-        w.TabDisplay.Position = UDim2.fromOffset(14, 98)
-        w.TabDisplay.Size = UDim2.new(1, -28, 0, 22)
-        w.TabDisplay.TextSize = 22
-        w.TabDisplay.TextTransparency = 0.12
-        w.TabDisplay.TextXAlignment = Enum.TextXAlignment.Left
-        w.TabDisplay.ZIndex = 2
-
-        -- 7) Premium window surface (glass gradient panel)
+        -- 6) Premium window surface (glass gradient panel)
         local bg = Instance.new("Frame")
         bg.Name = "GradientWindowSurface"
         bg.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -309,7 +286,7 @@ function Layout.patch(window)
         bgStroke.Parent = bg
         bg.Parent = w.Root
 
-        -- 8) Premium top accent strip (gradient bar across the window top)
+        -- 7) Premium top accent strip (gradient bar across the window top)
         local strip = Instance.new("Frame")
         strip.Name = "GradientTopStrip"
         strip.AnchorPoint = Vector2.new(0.5, 0)
