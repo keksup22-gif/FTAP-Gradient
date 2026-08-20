@@ -133,12 +133,22 @@ local Grabs_Config = {
     GrabRadius = 25,
 
     AntiRagdoll = false,
-    AntiGrab = false
+    AntiGrab = false,
+
+    SuperThrow = false,
+    ThrowPower = 1000,
+    ThrowKey = "F"
 }
 
 local HeldObject = nil
 local GrabbedPlayer = nil
 local MonitoringGrab = false
+
+-- Forward declarations (chunk-level locals so monitorGrabChange and
+-- other early-defined closures can call the Super Throw helpers that
+-- are implemented further down the file).
+local applyThrowForce
+local throwDirection
 
 
 -- ================================================================
@@ -320,8 +330,17 @@ local function monitorGrabChange()
 
                 -- Grab released
                 if not currentHeld and HeldObject then
+                    local released = HeldObject
                     HeldObject = nil
                     GrabbedPlayer = nil
+
+                    -- Super Throw on release: hurl the just-released object
+                    if Grabs_Config.SuperThrow then
+                        pcall(function()
+                            applyThrowForce(released, throwDirection(), Grabs_Config.ThrowPower or 1000)
+                        end)
+                    end
+
                     fireRemote("GrabEvents", "EndGrabEarly")
                     fireRemote("GrabEvents", "DestroyGrabLine")
                     fireRemote("HoldEvents", "Drop")
@@ -588,6 +607,164 @@ local function applySuperThrow()
     safeSetAngularVelocity(root, Vector3.new(0, 0, 0))
 end
 
+
+-- ================================================================
+-- SUPER THROW / SUPER PUNCH (Module 2)
+-- Enhanced throw: claim network ownership, aim by camera (with
+-- cursor-movement blending), then apply a powerful impulse. A
+-- temporary BodyVelocity (fallback LinearVelocity) keeps pushing for
+-- 0.1s so the server registers the throw even after ownership is
+-- released. Everything is pcall-guarded.
+-- ================================================================
+
+-- Cursor movement tracking (blended into the throw direction)
+local mouseDeltaX, mouseDeltaY = 0, 0
+local lastMousePos = nil
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        pcall(function()
+            local mouse = LocalPlayer:GetMouse()
+            if not mouse then return end
+            local mp = Vector2.new(mouse.X, mouse.Y)
+            if lastMousePos then
+                mouseDeltaX = mp.X - lastMousePos.X
+                mouseDeltaY = mp.Y - lastMousePos.Y
+            end
+            lastMousePos = mp
+        end)
+    end
+end)
+
+-- Throw direction: camera LookVector, rotated by recent cursor movement
+throwDirection = function()
+    local cam = Workspace.CurrentCamera
+    if not cam then
+        local root = getRoot()
+        if isBasePart(root) then return root.CFrame.LookVector end
+        return Vector3.new(0, 0, -1)
+    end
+    local dir = cam.CFrame.LookVector
+    if math.abs(mouseDeltaX) + math.abs(mouseDeltaY) > 25 then
+        dir = (cam.CFrame
+            * CFrame.Angles(0, -mouseDeltaX * 0.002, 0)
+            * CFrame.Angles(-mouseDeltaY * 0.002, 0, 0)).LookVector
+    end
+    return dir
+end
+
+-- Resolve the throw target: our held object or the grabbed player's root
+local function resolveThrowTarget()
+    if isBasePart(HeldObject) and HeldObject.Parent then
+        return HeldObject
+    end
+    if GrabbedPlayer and GrabbedPlayer.Character then
+        local tRoot = GrabbedPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if isBasePart(tRoot) and tRoot.Parent then
+            return tRoot
+        end
+    end
+    return nil
+end
+
+-- Core throw: part + direction + power (safety-checked everywhere)
+applyThrowForce = function(part, directionVector, power)
+    if not isBasePart(part) or not part.Parent then return false end
+    if part.Anchored then return false end
+    local root = getRoot()
+    if not isBasePart(root) then return false end
+    if typeof(directionVector) ~= "Vector3" then return false end
+    power = tonumber(power) or 1000
+    if power <= 0 then return false end
+
+    local velocity = (directionVector * power) + Vector3.new(0, power * 0.12, 0)
+    local ok = pcall(function()
+        -- 1) Take network ownership FIRST (hidden props + SetNetworkOwner)
+        claimNetworkOwnership(part)
+        -- 2) Snap the velocity immediately
+        part.AssemblyLinearVelocity = velocity
+        -- 3) Transient impulse: keep pushing 0.1s so the server computes
+        --    the full impulse before ownership is lost
+        local impulseOk = false
+        pcall(function()
+            local att = Instance.new("Attachment")
+            att.Parent = part
+            local lv = Instance.new("LinearVelocity")
+            lv.Attachment0 = att
+            lv.VectorVelocity = velocity
+            lv.MaxForce = math.huge
+            lv.Parent = part
+            impulseOk = true
+            task.delay(0.1, function()
+                pcall(function() lv:Destroy() end)
+                pcall(function() att:Destroy() end)
+            end)
+        end)
+        if not impulseOk then
+            pcall(function()
+                local bv = Instance.new("BodyVelocity")
+                bv.Velocity = velocity
+                bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                bv.Parent = part
+                task.delay(0.1, function()
+                    pcall(function() bv:Destroy() end)
+                end)
+            end)
+        end
+    end)
+    return ok
+end
+
+-- Full throw action: find target, aim, apply impulse, release the grab
+local function doThrow()
+    if not Grabs_Config.SuperThrow then return end
+    local part = resolveThrowTarget()
+    if not part then
+        Fluent:Notify({ Title = "Super Throw", Content = "No held object to throw.", Duration = 1.5 })
+        return false
+    end
+    local power = Grabs_Config.ThrowPower or 1000
+    local ok = applyThrowForce(part, throwDirection(), power)
+
+    -- Release the grab so the thrown object flies free
+    pcall(function()
+        HeldObject = nil
+        GrabbedPlayer = nil
+        fireRemote("GrabEvents", "EndGrabEarly")
+        fireRemote("HoldEvents", "Drop")
+        local char = LocalPlayer.Character
+        if char then
+            for _, p in ipairs(char:GetDescendants()) do
+                if p:IsA("BasePart") then
+                    for _, j in ipairs(p:GetJoints()) do
+                        if j:IsA("Weld") then
+                            local other = j.Part0 == p and j.Part1 or j.Part0
+                            if other == part then
+                                pcall(function() j:Destroy() end)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+
+    if ok then
+        Fluent:Notify({ Title = "Super Throw", Content = "Thrown with power " .. tostring(power), Duration = 1.5 })
+    end
+    return ok
+end
+
+-- Debounce: one throw per key press (UI keybind + manual listener may
+-- both fire on the same press)
+local lastThrowTime = 0
+local function debouncedThrow()
+    local now = os.clock()
+    if now - lastThrowTime < 0.05 then return end
+    lastThrowTime = now
+    pcall(doThrow)
+end
+
 -- Infinite Line Distance: patch Mouse Raycast params while enabled
 local Original_RaycastParams = nil
 local RayParams = Instance.new("RaycastParams")
@@ -782,6 +959,43 @@ InfiniteLineToggle:OnChanged(function(Value) Grabs_Config.InfiniteLine = Value e
 
 local RagdollGrabToggle = Tabs.Grabs:AddToggle("RagdollGrabToggle", { Title = "Ragdoll Grab", Default = false })
 RagdollGrabToggle:OnChanged(function(Value) Grabs_Config.RagdollGrab = Value end)
+
+Tabs.Grabs:AddSection("Super Throw (Module 2)")
+
+local SuperThrowToggle = Tabs.Grabs:AddToggle("SuperThrowToggle", { Title = "Enable Super Throw", Default = false })
+SuperThrowToggle:OnChanged(function(Value) Grabs_Config.SuperThrow = Value end)
+
+Tabs.Grabs:AddSlider("ThrowPowerSlider", {
+    Title = "Throw Power / Velocity",
+    Default = 1000,
+    Min = 100,
+    Max = 5000,
+    Rounding = 0,
+    Callback = function(Value) Grabs_Config.ThrowPower = Value end
+})
+
+ThrowKeybind = Tabs.Grabs:AddKeybind("ThrowKeybind", {
+    Title = "Throw Keybind",
+    Mode = "Toggle",
+    Default = "F",
+    Callback = function()
+        debouncedThrow()
+    end
+})
+
+-- Manual key listener fallback (works even if the UI keybind element
+-- has issues on some executors); debounced so a single press never
+-- triggers the throw twice.
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if not Grabs_Config.SuperThrow then return end
+    if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+    if UserInputService:GetFocusedTextBox() then return end
+    local bound = (ThrowKeybind and ThrowKeybind.Value) or Grabs_Config.ThrowKey or "F"
+    if string.upper(input.KeyCode.Name) == string.upper(tostring(bound)) then
+        debouncedThrow()
+    end
+end)
 
 Tabs.Grabs:AddSection("Auto-Grab / Network Claim")
 
