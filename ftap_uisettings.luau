@@ -56,7 +56,7 @@ if not Fluent or not Window then
         Title = "Gradient Hub | FTAP",
         SubTitle = "by keksup22",
         TabWidth = 160,
-        Size = UDim2.fromOffset(580, 460),
+        Size = UDim2.fromOffset(640, 460),
         Acrylic = true,
         Theme = "Dark",
         MinimizeKey = Enum.KeyCode.LeftControl

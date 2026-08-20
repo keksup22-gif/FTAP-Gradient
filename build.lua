@@ -1,6 +1,6 @@
 -- ================================================================
 -- GRADIENT HUB | FTAP - MONOLITHIC BUILD (generated, do not edit)
--- Generated: 2026-08-20 14:22:30
+-- Generated: 2026-08-20 14:31:54
 -- Source split: part1 (main.luau) + 11 inlined modules + tail
 -- ================================================================
 
@@ -110,7 +110,7 @@ local GradientInitStatus, GradientInitErr = pcall(function()
         local okW, win = pcall(Fluent.CreateWindow, Fluent, {
             Title = "Gradient Hub | FTAP",
             SubTitle = "by keksup22",
-            Size = UDim2.fromOffset(880, 540),
+            Size = UDim2.fromOffset(640, 540),
             TabWidth = 160,
             Acrylic = false,
             Theme = "Dark",
@@ -136,7 +136,7 @@ local GradientInitStatus, GradientInitErr = pcall(function()
         { key = "Protections", title = "Protections", icon = "shield" },
         { key = "Movement", title = "Movement", icon = "person-standing" },
         { key = "Combat", title = "Combat", icon = "swords" },
-        { key = "Visuals", title = "Visuals", icon = "sparkles" },
+        { key = "Visuals", title = "Visuals", icon = "eye" },
         { key = "Server", title = "Server", icon = "server" },
         { key = "Misc", title = "Misc", icon = "wrench" },
         { key = "Settings", title = "Settings", icon = "settings" },
@@ -255,7 +255,7 @@ local state = {
     underline = nil,
     selected = nil,
     selectedIndex = 1,
-    tabW = 102,
+    tabW = 70,
     tabH = 32,
     barH = 38,
 }
@@ -673,7 +673,7 @@ if not Fluent or not Window then
         Title = "Gradient Hub | FTAP",
         SubTitle = "by keksup22",
         TabWidth = 160,
-        Size = UDim2.fromOffset(580, 460),
+        Size = UDim2.fromOffset(640, 460),
         Acrylic = true,
         Theme = "Dark",
         MinimizeKey = Enum.KeyCode.LeftControl
@@ -1378,7 +1378,7 @@ if not Fluent or not Window then
         Title = "Gradient Hub | FTAP",
         SubTitle = "by keksup22",
         TabWidth = 160,
-        Size = UDim2.fromOffset(580, 460),
+        Size = UDim2.fromOffset(640, 460),
         Acrylic = true,
         Theme = "Dark",
         MinimizeKey = Enum.KeyCode.LeftControl
@@ -2827,7 +2827,7 @@ if not Fluent or not Window then
         Title = "Gradient Hub | FTAP",
         SubTitle = "by keksup22",
         TabWidth = 160,
-        Size = UDim2.fromOffset(580, 460),
+        Size = UDim2.fromOffset(640, 460),
         Acrylic = true,
         Theme = "Dark",
         MinimizeKey = Enum.KeyCode.LeftControl
@@ -4350,7 +4350,7 @@ if not Fluent or not Window then
         Title = "Gradient Hub | FTAP",
         SubTitle = "by keksup22",
         TabWidth = 160,
-        Size = UDim2.fromOffset(580, 460),
+        Size = UDim2.fromOffset(640, 460),
         Acrylic = true,
         Theme = "Dark",
         MinimizeKey = Enum.KeyCode.LeftControl
@@ -5561,7 +5561,7 @@ if not Fluent or not Window then
         Title = "Gradient Hub | FTAP",
         SubTitle = "by keksup22",
         TabWidth = 160,
-        Size = UDim2.fromOffset(580, 460),
+        Size = UDim2.fromOffset(640, 460),
         Acrylic = true,
         Theme = "Dark",
         MinimizeKey = Enum.KeyCode.LeftControl
@@ -6481,7 +6481,7 @@ if not Fluent or not Window then
         Title = "Gradient Hub | FTAP",
         SubTitle = "by keksup22",
         TabWidth = 160,
-        Size = UDim2.fromOffset(580, 460),
+        Size = UDim2.fromOffset(640, 460),
         Acrylic = true,
         Theme = "Dark",
         MinimizeKey = Enum.KeyCode.LeftControl
@@ -7527,7 +7527,7 @@ if not Fluent or not Window then
         Title = "Gradient Hub | FTAP",
         SubTitle = "by keksup22",
         TabWidth = 160,
-        Size = UDim2.fromOffset(580, 460),
+        Size = UDim2.fromOffset(640, 460),
         Acrylic = true,
         Theme = "Dark",
         MinimizeKey = Enum.KeyCode.LeftControl
@@ -8396,7 +8396,7 @@ if not Fluent or not Window then
         Title = "Gradient Hub | FTAP",
         SubTitle = "by keksup22",
         TabWidth = 160,
-        Size = UDim2.fromOffset(580, 460),
+        Size = UDim2.fromOffset(640, 460),
         Acrylic = true,
         Theme = "Dark",
         MinimizeKey = Enum.KeyCode.LeftControl
@@ -8415,7 +8415,7 @@ if type(Fluent) ~= "table" or type(Window) ~= "table" or type(Window.AddTab) ~= 
 end
 
 local Tabs = {
-    Misc = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "sparkles" }),
+    Misc = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "eye" }),
     Protections = _G.GradientTabs and _G.GradientTabs.Protections or Window:AddTab({ Title = "Protections", Icon = "shield" }),
     Settings = _G.GradientTabs and _G.GradientTabs.Settings or Window:AddTab({ Title = "Settings", Icon = "settings" })
 }

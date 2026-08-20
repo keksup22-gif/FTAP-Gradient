@@ -22,7 +22,7 @@ local state = {
     underline = nil,
     selected = nil,
     selectedIndex = 1,
-    tabW = 102,
+    tabW = 70,
     tabH = 32,
     barH = 38,
 }

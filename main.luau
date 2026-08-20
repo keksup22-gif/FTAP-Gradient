@@ -104,7 +104,7 @@ local GradientInitStatus, GradientInitErr = pcall(function()
         local okW, win = pcall(Fluent.CreateWindow, Fluent, {
             Title = "Gradient Hub | FTAP",
             SubTitle = "by keksup22",
-            Size = UDim2.fromOffset(880, 540),
+            Size = UDim2.fromOffset(640, 540),
             TabWidth = 160,
             Acrylic = false,
             Theme = "Dark",
@@ -130,7 +130,7 @@ local GradientInitStatus, GradientInitErr = pcall(function()
         { key = "Protections", title = "Protections", icon = "shield" },
         { key = "Movement", title = "Movement", icon = "person-standing" },
         { key = "Combat", title = "Combat", icon = "swords" },
-        { key = "Visuals", title = "Visuals", icon = "sparkles" },
+        { key = "Visuals", title = "Visuals", icon = "eye" },
         { key = "Server", title = "Server", icon = "server" },
         { key = "Misc", title = "Misc", icon = "wrench" },
         { key = "Settings", title = "Settings", icon = "settings" },

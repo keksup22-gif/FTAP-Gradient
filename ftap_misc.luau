@@ -48,7 +48,7 @@ if not Fluent or not Window then
         Title = "Gradient Hub | FTAP",
         SubTitle = "by keksup22",
         TabWidth = 160,
-        Size = UDim2.fromOffset(580, 460),
+        Size = UDim2.fromOffset(640, 460),
         Acrylic = true,
         Theme = "Dark",
         MinimizeKey = Enum.KeyCode.LeftControl
@@ -67,7 +67,7 @@ if type(Fluent) ~= "table" or type(Window) ~= "table" or type(Window.AddTab) ~= 
 end
 
 local Tabs = {
-    Misc = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "sparkles" }),
+    Misc = _G.GradientTabs and _G.GradientTabs.Misc or Window:AddTab({ Title = "Misc & Settings", Icon = "eye" }),
     Protections = _G.GradientTabs and _G.GradientTabs.Protections or Window:AddTab({ Title = "Protections", Icon = "shield" }),
     Settings = _G.GradientTabs and _G.GradientTabs.Settings or Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
