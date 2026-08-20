@@ -140,40 +140,42 @@ local GradientInitStatus, GradientInitErr = pcall(function()
     local tabCount = 0
 
     for _, spec in ipairs(tabSpecs) do
+        print("[Gradient] Creating tab:", spec.title, "key:", spec.key, "icon:", tostring(spec.icon))
         local tab = nil
-        -- Pre-check icon via Fluent.GetIcon if available
         local safeIcon = spec.icon
         if type(Fluent.GetIcon) == "function" then
             local okIcon, asset = pcall(Fluent.GetIcon, Fluent, spec.icon)
             if not (okIcon and type(asset) == "string") then
-                warn("[Tab Error]: GetIcon('" .. tostring(spec.icon) .. "') failed for tab '" .. spec.title .. "' (" .. tostring(asset) .. ") - creating without icon.")
+                warn("[Tab Error]: GetIcon('" .. tostring(spec.icon) .. "') failed for tab '" .. spec.title .. "' - creating without icon.")
                 safeIcon = nil
             end
         end
 
-        -- Attempt 1: with safeIcon (if validated)
-        local ok1, t1 = pcall(Window.AddTab, Window, { Title = spec.title, Icon = safeIcon })
+        local ok1, t1 = pcall(function()
+            return Window:AddTab({ Title = spec.title, Icon = safeIcon })
+        end)
         if ok1 and type(t1) == "table" then
             tab = t1
-            print("[Gradient] Tab '" .. spec.title .. "' created OK.")
+            print("[Gradient] SUCCESS: Tab '" .. spec.title .. "' created.")
         else
             warn("[Tab Error]: AddTab #1 failed for '" .. spec.title .. "': " .. tostring(t1))
-            -- Attempt 2: retry strictly without Icon
-            local ok2, t2 = pcall(Window.AddTab, Window, { Title = spec.title })
+            local ok2, t2 = pcall(function()
+                return Window:AddTab({ Title = spec.title })
+            end)
             if ok2 and type(t2) == "table" then
                 tab = t2
-                print("[Gradient] Tab '" .. spec.title .. "' added without icon (fallback).")
+                print("[Gradient] SUCCESS (fallback): Tab '" .. spec.title .. "' added without icon.")
             else
-                warn("[Tab Error]: AddTab #2 failed for '" .. spec.title .. "': " .. tostring(t2))
+                warn("[Tab Error]: AddTab #2 (fallback) failed for '" .. spec.title .. "': " .. tostring(t2))
             end
         end
 
         if tab then
             Tabs[spec.key] = tab
             tabCount = tabCount + 1
+        else
+            print("[Gradient] CRITICAL: Tab '" .. spec.title .. "' could not be created at all!")
         end
-        -- Give Fluent one tick between creations so the tab bar layout
-        -- settles before the next AddTab (prevents mid-chain breakage).
         task.wait(0.05)
     end
 
