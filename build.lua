@@ -1,6 +1,6 @@
 -- ================================================================
 -- GRADIENT HUB | FTAP - MONOLITHIC BUILD (generated, do not edit)
--- Generated: 2026-08-20 14:55:55
+-- Generated: 2026-08-20 15:32:32
 -- Source split: part1 (main.luau) + 11 inlined modules + tail
 -- ================================================================
 
@@ -307,6 +307,7 @@ end
 local cornerRadius = 8
 
 local function styleTab(btn)
+    btn.Visible = true
     btn.Size = UDim2.new(1, 0, 0, 34)
     btn.ZIndex = 3
     btn.AutoButtonColor = false
@@ -400,25 +401,36 @@ function Layout.patch(window)
             lay.FillDirection = Enum.FillDirection.Vertical
             lay.HorizontalAlignment = Enum.HorizontalAlignment.Left
             lay.VerticalAlignment = Enum.VerticalAlignment.Top
-            lay.Padding = UDim.new(4, 0)
+            -- NOTE: UDim.new(0, 4) = 4 PIXELS padding. The old value
+            -- UDim.new(4, 0) was SCALE 4 = 4x the container height
+            -- (~1900px gaps), which pushed every tab after the first
+            -- far below the visible sidebar area.
+            lay.Padding = UDim.new(0, 4)
 
-            local syncingCanvas = false
-            lay:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-                if syncingCanvas then return end
-                syncingCanvas = true
-                task.defer(function()
-                    local okSync = pcall(function()
-                        if lay and holder then
-                            local ay = lay.AbsoluteContentSize and lay.AbsoluteContentSize.Y or 0
-                            holder.CanvasSize = UDim2.new(0, 0, 0, ay + 4)
-                        end
-                    end)
-                    syncingCanvas = false
-                    return okSync
-                end)
+            -- Automatic canvas: let the engine size the scroll area to
+            -- fit all 8 tab buttons (2023+ engines / supported executors).
+            local autoOk = pcall(function()
+                holder.AutomaticCanvasSize = Enum.AutomaticSize.Y
             end)
-            local ay0 = lay.AbsoluteContentSize and lay.AbsoluteContentSize.Y or 0
-            holder.CanvasSize = UDim2.new(0, 0, 0, ay0 + 4)
+            if not autoOk then
+                -- Fallback for older executors: manual canvas sync.
+                local syncingCanvas = false
+                lay:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+                    if syncingCanvas then return end
+                    syncingCanvas = true
+                    task.defer(function()
+                        pcall(function()
+                            if lay and holder then
+                                local ay = lay.AbsoluteContentSize and lay.AbsoluteContentSize.Y or 0
+                                holder.CanvasSize = UDim2.new(0, 0, 0, ay + 4)
+                            end
+                        end)
+                        syncingCanvas = false
+                    end)
+                end)
+                local ay0 = lay.AbsoluteContentSize and lay.AbsoluteContentSize.Y or 0
+                holder.CanvasSize = UDim2.new(0, 0, 0, ay0 + 4)
+            end
         end
 
         -- 3) Accent underline: dedicated frame on the left edge of the
@@ -472,8 +484,8 @@ function Layout.patch(window)
             end
         end)
 
-        -- 5b) Layout watchdog: re-assert vertical layout + restyle any
-        --     tab button that lost its styling.
+        -- 5b) Layout watchdog: re-assert vertical layout, sane padding,
+        --     canvas and visible/full-size buttons every 0.5s.
         task.spawn(function()
             while task.wait(0.5) do
                 pcall(function()
@@ -482,9 +494,15 @@ function Layout.patch(window)
                         lay2.FillDirection = Enum.FillDirection.Vertical
                         lay2.HorizontalAlignment = Enum.HorizontalAlignment.Left
                         lay2.VerticalAlignment = Enum.VerticalAlignment.Top
+                        lay2.Padding = UDim.new(0, 4)
                     end
                     holder.ScrollingDirection = Enum.ScrollingDirection.Y
+                    pcall(function()
+                        holder.AutomaticCanvasSize = Enum.AutomaticSize.Y
+                    end)
                     for _, btn2 in ipairs(getTabButtons(holder)) do
+                        btn2.Visible = true
+                        btn2.Size = UDim2.new(1, 0, 0, 34)
                         if not btn2:FindFirstChild("GradientTabStroke") then
                             styleTab(btn2)
                         end
