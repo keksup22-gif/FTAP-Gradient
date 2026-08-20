@@ -130,7 +130,10 @@ local Grabs_Config = {
     GrabMethodEnabled = false,
 
     AutoGrab = false,
-    GrabRadius = 25
+    GrabRadius = 25,
+
+    AntiRagdoll = false,
+    AntiGrab = false
 }
 
 local HeldObject = nil
@@ -404,6 +407,167 @@ end)
 
 
 -- ================================================================
+-- ANTI-RAGDOLL / ANTI-GRAB (Character Defense)
+-- Detects and reverses ragdoll / falling / platform-standing states
+-- and destroys any joint that links our character to an external
+-- object or player (unless it is our own current grab).
+-- ================================================================
+
+local FOREIGN_JOINT_CLASSES = {
+    "Weld", "WeldConstraint", "RopeConstraint",
+    "BallSocketConstraint", "NoCollisionConstraint"
+}
+
+local function isJointClass(child)
+    for _, cls in ipairs(FOREIGN_JOINT_CLASSES) do
+        if child:IsA(cls) then return true end
+    end
+    return false
+end
+
+local function jointExtraction(child)
+    if not child then return nil, nil end
+    local part0, part1
+    if child:IsA("WeldConstraint") or child:IsA("BallSocketConstraint")
+        or child:IsA("NoCollisionConstraint") then
+        part0, part1 = child.Part0, child.Part1
+    elseif child:IsA("RopeConstraint") then
+        part0 = child.Attachment0 and child.Attachment0.Parent
+        part1 = child.Attachment1 and child.Attachment1.Parent
+    else
+        part0, part1 = child.Part0, child.Part1
+    end
+    return part0, part1
+end
+
+-- External side of a joint that crosses the character boundary (or nil)
+local function getExternalSide(part0, part1, char)
+    if not part0 or not part1 then return nil end
+    local p0in = part0:IsDescendantOf(char)
+    local p1in = part1:IsDescendantOf(char)
+    if p0in == p1in then return nil end
+    return p0in and part1 or part0
+end
+
+-- "Enemy" = another player's character part OR blob/ragdoll-named model
+local function externalIsEnemy(ext)
+    local parent = ext
+    while parent do
+        if parent:IsA("Model") then
+            local owner = Players:GetPlayerFromCharacter(parent)
+            if owner and owner ~= LocalPlayer then return true end
+            local nm = string.lower(parent.Name or "")
+            if string.find(nm, "blob") ~= nil or string.find(nm, "ragdoll") ~= nil then
+                return true
+            end
+        end
+        parent = parent.Parent
+    end
+    return false
+end
+
+-- Full check: destroy any foreign joint except the one holding OUR grab.
+local function destroyForeignJoint(child)
+    pcall(function()
+        if not isJointClass(child) then return end
+        local char = LocalPlayer.Character
+        if not char then return end
+        local part0, part1 = jointExtraction(child)
+        local ext = getExternalSide(part0, part1, char)
+        if not ext then return end
+        -- Keep joints that belong to our own current grab
+        if HeldObject and (ext == HeldObject or ext:IsDescendantOf(HeldObject)) then return end
+        if GrabbedPlayer and GrabbedPlayer.Character
+            and ext:IsDescendantOf(GrabbedPlayer.Character) then return end
+        child:Destroy()
+    end)
+end
+
+-- Instant variant (ChildAdded / DescendantAdded): only clearly-enemy
+-- joints are destroyed immediately; props are handled by the sweep.
+local function destroyEnemyJoint(child)
+    pcall(function()
+        if not isJointClass(child) then return end
+        local char = LocalPlayer.Character
+        if not char then return end
+        local part0, part1 = jointExtraction(child)
+        local ext = getExternalSide(part0, part1, char)
+        if not ext then return end
+        if externalIsEnemy(ext) then
+            child:Destroy()
+        end
+    end)
+end
+
+-- Anti-Ragdoll: revert ragdoll/falling/platform states, disable the
+-- states themselves, clear PlatformStand and restore CanCollide.
+local function antiRagdollTick()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+
+    local st = hum:GetState()
+    if st == Enum.HumanoidStateType.Ragdoll
+        or st == Enum.HumanoidStateType.FallingDown
+        or st == Enum.HumanoidStateType.PlatformStanding then
+        pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
+    end
+
+    if hum.PlatformStand then
+        pcall(function() hum.PlatformStand = false end)
+    end
+
+    for _, partName in ipairs({ "HumanoidRootPart", "Torso", "UpperTorso" }) do
+        local part = char:FindFirstChild(partName)
+        if part and part:IsA("BasePart") and not part.CanCollide then
+            pcall(function() part.CanCollide = true end)
+        end
+    end
+end
+
+-- Throttled sweep (0.1s): anti-ragdoll check + full joint scan
+local antiDefTick = makeThrottled(0.1)
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        antiDefTick(function()
+            if Grabs_Config.AntiRagdoll then
+                pcall(antiRagdollTick)
+            end
+            if Grabs_Config.AntiGrab then
+                local char = LocalPlayer.Character
+                if char then
+                    for _, child in ipairs(char:GetDescendants()) do
+                        destroyForeignJoint(child)
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+-- Instant listeners on the character for enemy joints
+local antiDefConnections = {}
+local function attachAntiDefListeners()
+    for _, conn in ipairs(antiDefConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    antiDefConnections = {}
+    local char = LocalPlayer.Character
+    if not char then return end
+    table.insert(antiDefConnections, char.ChildAdded:Connect(destroyEnemyJoint))
+    table.insert(antiDefConnections, char.DescendantAdded:Connect(destroyEnemyJoint))
+end
+
+LocalPlayer.CharacterAdded:Connect(function()
+    if Grabs_Config.AntiGrab or Grabs_Config.AntiRagdoll then
+        pcall(attachAntiDefListeners)
+    end
+end)
+
+
+-- ================================================================
 -- THROW FORCE & KICKBACK MODIFIERS
 -- ================================================================
 
@@ -632,6 +796,19 @@ Tabs.Grabs:AddSlider("GrabRadiusSlider", {
     Rounding = 0,
     Callback = function(Value) Grabs_Config.GrabRadius = Value end
 })
+
+Tabs.Grabs:AddSection("Anti-Ragdoll / Anti-Grab (Defense)")
+
+local AntiRagdollToggle = Tabs.Grabs:AddToggle("AntiRagdollToggle", { Title = "Anti-Ragdoll", Default = false })
+AntiRagdollToggle:OnChanged(function(Value) Grabs_Config.AntiRagdoll = Value end)
+
+local AntiGrabToggle = Tabs.Grabs:AddToggle("AntiGrabToggle", { Title = "Anti-Grab / Anti-Weld", Default = false })
+AntiGrabToggle:OnChanged(function(Value)
+    Grabs_Config.AntiGrab = Value
+    if Value then
+        pcall(attachAntiDefListeners)
+    end
+end)
 
 Tabs.Grabs:AddSection("Grab Destroy Method")
 
