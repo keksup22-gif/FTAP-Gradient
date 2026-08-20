@@ -334,16 +334,18 @@ local function monitorGrabChange()
                     HeldObject = nil
                     GrabbedPlayer = nil
 
-                    -- Super Throw on release: hurl the just-released object
+                    fireRemote("GrabEvents", "EndGrabEarly")
+                    fireRemote("GrabEvents", "DestroyGrabLine")
+                    fireRemote("HoldEvents", "Drop")
+
+                    -- Super Throw on release: hurl the just-released
+                    -- object AFTER the server dropped it (guarded by
+                    -- existence checks inside applyThrowForce).
                     if Grabs_Config.SuperThrow then
                         pcall(function()
                             applyThrowForce(released, throwDirection(), Grabs_Config.ThrowPower or 1000)
                         end)
                     end
-
-                    fireRemote("GrabEvents", "EndGrabEarly")
-                    fireRemote("GrabEvents", "DestroyGrabLine")
-                    fireRemote("HoldEvents", "Drop")
                 end
             end)
         end
@@ -655,21 +657,92 @@ end
 
 -- Resolve the throw target: our held object or the grabbed player's root
 local function resolveThrowTarget()
-    if isBasePart(HeldObject) and HeldObject.Parent then
+    if isBasePart(HeldObject) and HeldObject.Parent and HeldObject:IsDescendantOf(Workspace) then
         return HeldObject
     end
     if GrabbedPlayer and GrabbedPlayer.Character then
         local tRoot = GrabbedPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if isBasePart(tRoot) and tRoot.Parent then
+        if isBasePart(tRoot) and tRoot.Parent and tRoot:IsDescendantOf(Workspace) then
             return tRoot
         end
     end
     return nil
 end
 
+-- Safe joint side extraction (Weld / WeldConstraint / RopeConstraint)
+local function safeJointSides(joint)
+    if joint:IsA("WeldConstraint") then
+        return joint.Part0, joint.Part1
+    end
+    if joint:IsA("RopeConstraint") then
+        local a0 = joint.Attachment0 and joint.Attachment0.Parent
+        local a1 = joint.Attachment1 and joint.Attachment1.Parent
+        return a0, a1
+    end
+    return joint.Part0, joint.Part1
+end
+
+-- Safe detach: destroy ONLY grab welds that link OUR character to the
+-- thrown object (cross-boundary Weld / WeldConstraint / RopeConstraint).
+-- Internal joints of the object itself are left untouched, and nothing
+-- but the joint instances is ever destroyed.
+local function safeDetachGrabWeld(part)
+    if not isBasePart(part) then return end
+    if not part.Parent or not part:IsDescendantOf(Workspace) then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+
+    local candidates = {}
+    pcall(function()
+        local function collectFrom(holder)
+            if not holder then return end
+            for _, child in ipairs(holder:GetDescendants()) do
+                if child:IsA("BasePart") then
+                    for _, j in ipairs(child:GetJoints()) do
+                        table.insert(candidates, j)
+                    end
+                    for _, c in ipairs(child:GetConstraints()) do
+                        table.insert(candidates, c)
+                    end
+                end
+            end
+        end
+        -- Joints parented under our character AND under the thrown object
+        collectFrom(char)
+        local top = part.Parent
+        if top and top:IsA("Model") then
+            collectFrom(top)
+        elseif top and top:IsA("BasePart") then
+            collectFrom(top)
+        end
+        collectFrom(part)
+    end)
+
+    for _, j in ipairs(candidates) do
+        pcall(function()
+            if not j or not j.Parent then return end
+            if not (j:IsA("Weld") or j:IsA("WeldConstraint") or j:IsA("RopeConstraint")) then return end
+            if not part.Parent or not part:IsDescendantOf(Workspace) then return end
+            local p0, p1 = safeJointSides(j)
+            if not p0 or not p1 then return end
+            local p0inChar = p0:IsDescendantOf(char)
+            local p1inChar = p1:IsDescendantOf(char)
+            local p0inObj = p0 == part or p0:IsDescendantOf(part)
+            local p1inObj = p1 == part or p1:IsDescendantOf(part)
+            -- ONLY cross-boundary grab welds (char <-> thrown object)
+            local crossCharObj = (p0inChar and p1inObj) or (p1inChar and p0inObj)
+            if crossCharObj then
+                j:Destroy()
+            end
+        end)
+    end
+end
+
 -- Core throw: part + direction + power (safety-checked everywhere)
 applyThrowForce = function(part, directionVector, power)
-    if not isBasePart(part) or not part.Parent then return false end
+    -- 1) Existence: part must still be alive inside Workspace
+    if not isBasePart(part) then return false end
+    if not part.Parent or not part:IsDescendantOf(Workspace) then return false end
     if part.Anchored then return false end
     local root = getRoot()
     if not isBasePart(root) then return false end
@@ -679,14 +752,19 @@ applyThrowForce = function(part, directionVector, power)
 
     local velocity = (directionVector * power) + Vector3.new(0, power * 0.12, 0)
     local ok = pcall(function()
-        -- 1) Take network ownership FIRST (hidden props + SetNetworkOwner)
+        -- Re-check: the prop may be destroyed between the check and now
+        if not part.Parent or not part:IsDescendantOf(Workspace) then return end
+        -- 2) Take network ownership FIRST (hidden props + SetNetworkOwner)
         claimNetworkOwnership(part)
-        -- 2) Snap the velocity immediately
-        part.AssemblyLinearVelocity = velocity
-        -- 3) Transient impulse: keep pushing 0.1s so the server computes
+        -- 3) Snap the velocity immediately (only if still alive)
+        if part.Parent and part:IsDescendantOf(Workspace) then
+            part.AssemblyLinearVelocity = velocity
+        end
+        -- 4) Transient impulse: keep pushing 0.1s so the server computes
         --    the full impulse before ownership is lost
         local impulseOk = false
         pcall(function()
+            if not part.Parent or not part:IsDescendantOf(Workspace) then return end
             local att = Instance.new("Attachment")
             att.Parent = part
             local lv = Instance.new("LinearVelocity")
@@ -696,18 +774,23 @@ applyThrowForce = function(part, directionVector, power)
             lv.Parent = part
             impulseOk = true
             task.delay(0.1, function()
-                pcall(function() lv:Destroy() end)
-                pcall(function() att:Destroy() end)
+                pcall(function()
+                    if lv and lv.Parent then lv:Destroy() end
+                    if att and att.Parent then att:Destroy() end
+                end)
             end)
         end)
         if not impulseOk then
             pcall(function()
+                if not part.Parent or not part:IsDescendantOf(Workspace) then return end
                 local bv = Instance.new("BodyVelocity")
                 bv.Velocity = velocity
                 bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
                 bv.Parent = part
                 task.delay(0.1, function()
-                    pcall(function() bv:Destroy() end)
+                    pcall(function()
+                        if bv and bv.Parent then bv:Destroy() end
+                    end)
                 end)
             end)
         end
@@ -724,30 +807,24 @@ local function doThrow()
         return false
     end
     local power = Grabs_Config.ThrowPower or 1000
-    local ok = applyThrowForce(part, throwDirection(), power)
 
-    -- Release the grab so the thrown object flies free
+    -- 1) Release the grab FIRST so the server stops holding/exploding
+    --    before the object receives the impulse (avoids nil-reference
+    --    crashes in the game's server scripts, e.g. ExplosionMaker).
     pcall(function()
         HeldObject = nil
         GrabbedPlayer = nil
         fireRemote("GrabEvents", "EndGrabEarly")
         fireRemote("HoldEvents", "Drop")
-        local char = LocalPlayer.Character
-        if char then
-            for _, p in ipairs(char:GetDescendants()) do
-                if p:IsA("BasePart") then
-                    for _, j in ipairs(p:GetJoints()) do
-                        if j:IsA("Weld") then
-                            local other = j.Part0 == p and j.Part1 or j.Part0
-                            if other == part then
-                                pcall(function() j:Destroy() end)
-                            end
-                        end
-                    end
-                end
-            end
-        end
     end)
+
+    -- 2) Detach only our grab welds (cross-boundary char <-> object);
+    --    internal joints of the object stay intact, object itself is
+    --    never destroyed.
+    safeDetachGrabWeld(part)
+
+    -- 3) Apply the impulse (guarded: existence + pcall inside)
+    local ok = applyThrowForce(part, throwDirection(), power)
 
     if ok then
         Fluent:Notify({ Title = "Super Throw", Content = "Thrown with power " .. tostring(power), Duration = 1.5 })
