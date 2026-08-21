@@ -1,6 +1,6 @@
 -- ================================================================
 -- GRADIENT HUB | FTAP - MONOLITHIC BUILD (generated, do not edit)
--- Generated: 2026-08-21 10:54:54
+-- Generated: 2026-08-21 11:26:38
 -- Source split: part1 (main.luau) + 11 inlined modules + tail
 -- ================================================================
 
@@ -8122,6 +8122,99 @@ Tabs.Protections:AddToggle("AntiKickDefenseToggle", { Title = "Intercept Telepor
         pcall(hookAntiKickRemotes)
         Fluent:Notify({ Title = "Anti Kick", Content = "Active: teleport/void kicks are intercepted.", Duration = 2 })
     end
+end })
+
+-- ================================================================
+-- NINJA SHURIKEN ANTI-KICK MODULE
+-- ================================================================
+local antiKickMethod = "NinjaShuriken"
+local antikick = false
+
+local function startAntiKick(v, HRP, inv, spawntoy, sno, DestroyToy, StickyEvent, plr)
+    antikick = v
+    if antikick then
+        task.spawn(function()
+            task.wait(0.1)
+            if not inv:FindFirstChild("AntiKickItem") then
+                repeat task.wait() until (plr.Character and plr.Character:FindFirstChild("CanSpawnToy") and plr.Character.CanSpawnToy.Value) or true
+                local shu
+                local part
+                while antikick and task.wait() do
+                    pcall(function()
+                        local char = plr.Character
+                        if not shu or not inv:FindFirstChild("AntiKickItem") then
+                            shu = spawntoy(antiKickMethod, HRP.CFrame * CFrame.new(5, 10, 20))
+                            if shu then
+                                shu.Name = "AntiKickItem"
+                                part = shu:WaitForChild("StickyPart", 0.3)
+                                sno(part)
+                            end
+                        end
+                        if shu and shu:FindFirstChild("StickyPart") and shu.StickyPart:FindFirstChild("PartOwner") and shu.StickyPart:FindFirstChild("PartOwner").Value ~= plr.Name then
+                            sno(part)
+                        end
+                        if char and char:FindFirstChild("HumanoidRootPart") and char.HumanoidRootPart:FindFirstChild("FirePlayerPart") then
+                            if part and part:FindFirstChild("StickyWeld") and part.StickyWeld.Part1 ~= char.HumanoidRootPart.FirePlayerPart then
+                                sno(part)
+                                if StickyEvent then
+                                    StickyEvent:FireServer(part, char.HumanoidRootPart.FirePlayerPart, CFrame.new(0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 1, 0))
+                                end
+                            end
+                        end
+                        task.wait(0.2)
+                        if shu and shu:FindFirstChild("StickyPart") and HRP and (part.Position - HRP.Position).Magnitude > 30 then
+                            if DestroyToy and inv:FindFirstChild("AntiKickItem") then
+                                DestroyToy:FireServer(inv.AntiKickItem)
+                            end
+                            shu = spawntoy(antiKickMethod, HRP.CFrame * CFrame.new(5, 10, 20))
+                            if shu then
+                                shu.Name = "AntiKickItem"
+                                part = shu:WaitForChild("StickyPart", 0.3)
+                                sno(part)
+                            end
+                        end
+                    end)
+                end
+            end
+        end)
+    else
+        if inv and inv:FindFirstChild("AntiKickItem") then 
+            if DestroyToy then
+                DestroyToy:FireServer(inv.AntiKickItem) 
+            end
+        end
+    end
+end
+
+local function spawnToyHelper(name, cf)
+    local r = getRemote("ToyEvents", "SpawnToy") or getRemote("ItemEvents", "SpawnItem")
+    if r then
+        if r:IsA("RemoteFunction") then
+            return r:InvokeServer(name, cf)
+        else
+            r:FireServer(name, cf)
+        end
+    end
+    return nil
+end
+
+local function setNetOwnerHelper(part)
+    pcall(function()
+        if part and part:IsA("BasePart") and typeof(part.SetNetworkOwner) == "function" then
+            part:SetNetworkOwner(LocalPlayer)
+        end
+    end)
+end
+
+Tabs.Protections:AddToggle("NinjaAntiKickToggle", { Title = "Ninja Shuriken Anti-Kick", Default = false, Callback = function(Value)
+    pcall(function()
+        local hrp = getRoot()
+        local inv = LocalPlayer:FindFirstChildOfClass("Backpack") or LocalPlayer.Character or LocalPlayer
+        local destroyToy = getRemote("ToyEvents", "DestroyToy") or getRemote("ItemEvents", "DestroyItem")
+        local stickyEvt = getRemote("StickyEvents", "StickyRemote") or getRemote("GrabEvents", "StickyEvent")
+        startAntiKick(Value, hrp, inv, spawnToyHelper, setNetOwnerHelper, destroyToy, stickyEvt, LocalPlayer)
+    end)
+    Fluent:Notify({ Title = "Anti-Kick", Content = "Ninja Shuriken Anti-Kick set to " .. tostring(Value), Duration = 2 })
 end })
 
 
