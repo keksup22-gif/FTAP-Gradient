@@ -1,6 +1,6 @@
 -- ================================================================
 -- GRADIENT HUB | FTAP - MONOLITHIC BUILD (generated, do not edit)
--- Generated: 2026-08-21 12:00:26
+-- Generated: 2026-08-21 12:07:09
 -- Source split: part1 (main.luau) + 11 inlined modules + tail
 -- ================================================================
 
@@ -5449,6 +5449,98 @@ Players.PlayerRemoving:Connect(function(player)
         Fluent:Notify({ Title = "Target", Content = "Target left the game, cleared.", Duration = 3 })
     end
     refreshPlayerDropdown()
+end)
+
+
+-- ================================================================
+-- POSE GRAB (FIGURES) MODULE (OMEGA PORT)
+-- ================================================================
+local Poses = {
+    ["Pose 1 Jesus"] = {
+        HoldPosition = {X = 0, Y = 0, Z = -7.5}, HoldRotation = {X = 90, Y = 0, Z = 108},
+        LeftArmPosition = {X = -1.5, Y = 1, Z = -1}, LeftArmRotation = {X = 283, Y = 0, Z = 0},
+        RightArmPosition = {X = 1.5, Y = 0.5, Z = 1}, RightArmRotation = {X = 270, Y = 0, Z = 0},
+        LeftLegPosition = {X = 0.5, Y = -1.5, Z = 0.5}, LeftLegRotation = {X = 312, Y = 0, Z = 0},
+        RightLegPosition = {X = -0.5, Y = -1.5, Z = 0.5}, RightLegRotation = {X = 283, Y = 0, Z = 0},
+        HeadPosition = {X = 0, Y = 1.5, Z = 0}, HeadRotation = {X = 0, Y = 0, Z = 0}
+    },
+    ["Pose 2 Dog"] = {
+        HoldPosition = {X = 0, Y = -1.5, Z = -12.5}, HoldRotation = {X = 272, Y = 0, Z = 0},
+        LeftArmPosition = {X = -1, Y = 1, Z = -0.5}, LeftArmRotation = {X = 90, Y = 0, Z = 0},
+        RightArmPosition = {X = 1, Y = 1, Z = -0.5}, RightArmRotation = {X = 90, Y = 0, Z = 0},
+        LeftLegPosition = {X = 1, Y = -1, Z = -0.5}, LeftLegRotation = {X = 90, Y = 0, Z = 0},
+        RightLegPosition = {X = -1, Y = -1, Z = -0.5}, RightLegRotation = {X = 90, Y = 0, Z = 0},
+        HeadPosition = {X = 0, Y = 1, Z = 1}, HeadRotation = {X = 90, Y = 0, Z = 0}
+    },
+    ["Pose 7 T-Pose"] = {
+        HoldPosition = {X = 0, Y = -2, Z = -10}, HoldRotation = {X = 90, Y = 0, Z = 0},
+        LeftArmPosition = {X = -1.5, Y = 0, Z = 0}, LeftArmRotation = {X = 270, Y = 0, Z = 315},
+        RightArmPosition = {X = 1.5, Y = 0, Z = 0}, RightArmRotation = {X = 270, Y = 0, Z = 45},
+        LeftLegPosition = {X = -1, Y = -1.5, Z = 0}, LeftLegRotation = {X = 90, Y = 0, Z = 0},
+        RightLegPosition = {X = 1, Y = -1.5, Z = 0}, RightLegRotation = {X = 90, Y = 0, Z = 0},
+        HeadPosition = {X = 0, Y = 1.5, Z = 0}, HeadRotation = {X = 0, Y = 0, Z = 0}
+    }
+}
+
+local Target_Pose_Config = {
+    SelectedPose = "Pose 1 Jesus",
+    PoseEnabled = false
+}
+
+local function applyPose(target, poseData)
+    if not target or not target.Character then return end
+    local char = target.Character
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+    local myChar = LocalPlayer.Character
+    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not hrp or not torso or not myHRP then return end
+    
+    pcall(function()
+        if not hrp:IsDescendantOf(Workspace) or not torso:IsDescendantOf(Workspace) or not myHRP:IsDescendantOf(Workspace) then return end
+        if typeof(hrp.SetNetworkOwner) == "function" then
+            hrp:SetNetworkOwner(LocalPlayer)
+        end
+        local holdCF = myHRP.CFrame * CFrame.new(
+            poseData.HoldPosition.X, poseData.HoldPosition.Y, poseData.HoldPosition.Z
+        ) * CFrame.Angles(
+            math.rad(poseData.HoldRotation.X), math.rad(poseData.HoldRotation.Y), math.rad(poseData.HoldRotation.Z)
+        )
+        torso.CFrame = holdCF
+        torso.AssemblyLinearVelocity = Vector3.zero
+        torso.AssemblyAngularVelocity = Vector3.zero
+    end)
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if Target_Pose_Config.PoseEnabled and Target_Config.SelectedPlayer then
+            pcall(function()
+                local pose = Poses[Target_Pose_Config.SelectedPose]
+                if pose then
+                    applyPose(Target_Config.SelectedPlayer, pose)
+                end
+            end)
+        end
+    end
+end)
+
+Tabs.Target:AddSection("Pose Grab (Figures)")
+
+Tabs.Target:AddDropdown("PoseDropdown", {
+    Title = "Select Pose",
+    Values = {"Pose 1 Jesus", "Pose 2 Dog", "Pose 7 T-Pose"},
+    Default = "Pose 1 Jesus",
+    Callback = function(Value) Target_Pose_Config.SelectedPose = Value end
+})
+
+local PoseToggle = Tabs.Target:AddToggle("PoseToggle", { Title = "Enable Pose Grab", Default = false })
+PoseToggle:OnChanged(function(Value)
+    Target_Pose_Config.PoseEnabled = Value
+    if Value and Target_Config.SelectedPlayer then
+        Fluent:Notify({ Title = "Pose Grab", Content = "Applying pose to " .. Target_Config.SelectedPlayer.Name, Duration = 2 })
+    end
 end)
 
 
