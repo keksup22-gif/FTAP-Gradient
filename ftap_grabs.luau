@@ -157,7 +157,12 @@ local Grabs_Config = {
 
     Magnet = false,
     BringPlayers = false,
-    MagnetRadius = 40
+    MagnetRadius = 40,
+
+    AntiFling = false,
+    TargetESP = false,
+    AutoAura = false,
+    AuraRadius = 35
 }
 
 local HeldObject = nil
@@ -990,6 +995,218 @@ task.spawn(function()
     end
 end)
 
+
+-- ================================================================
+-- TARGET & AURA SYSTEM (Module 5)
+-- Anti-Fling Guard, Target ESP & Tracers, Target Selector, and
+-- Auto-Aura (automatic prop bring + throw at closest target's HRP).
+-- ================================================================
+
+-- Anti-Fling Guard loop (Heartbeat)
+RunService.Heartbeat:Connect(function()
+    if not Grabs_Config.AntiFling then return end
+    pcall(function()
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if isBasePart(root) and root.AssemblyLinearVelocity.Magnitude > 120 then
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+        end
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            if hum.PlatformStand or hum.Sit then
+                hum.PlatformStand = false
+                hum.Sit = false
+                hum.AutoRotate = true
+                hum:ChangeState(Enum.HumanoidStateType.Running)
+            end
+        end
+    end)
+end)
+
+-- Target Selector: get closest valid enemy player
+local function getClosestTarget()
+    local closest, dist = nil, 9999
+    local root = getRoot()
+    if not isBasePart(root) then return nil end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local tRoot = plr.Character:FindFirstChild("HumanoidRootPart")
+            local tHum = plr.Character:FindFirstChildOfClass("Humanoid")
+            if isBasePart(tRoot) and tHum and tHum.Health > 0 and tRoot:IsDescendantOf(Workspace) then
+                local d = (tRoot.Position - root.Position).Magnitude
+                if d < dist then
+                    dist = d
+                    closest = plr
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- Target ESP Folder under CoreGui / PlayerGui
+local targetEspFolder = Instance.new("Folder")
+targetEspFolder.Name = "GradientTargetESP"
+pcall(function()
+    targetEspFolder.Parent = CoreGui
+end)
+
+-- Target ESP & Tracers renderer (RenderStepped)
+local function updateTargetESP()
+    targetEspFolder:ClearAllChildren()
+    if not Grabs_Config.TargetESP then return end
+    local target = getClosestTarget()
+    if not target or not target.Character then return end
+    local char = target.Character
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local myRoot = getRoot()
+    if not isBasePart(root) or not myRoot then return end
+    if not root:IsDescendantOf(Workspace) then return end
+
+    pcall(function()
+        -- SelectionBox
+        local box = Instance.new("SelectionBox")
+        box.Name = "TargetBox"
+        box.Adornee = char
+        box.LineThickness = 0.04
+        box.Color3 = Color3.fromRGB(170, 80, 255)
+        box.Parent = targetEspFolder
+
+        -- BillboardGui (Name, Distance, Health)
+        local dist = math.floor((root.Position - myRoot.Position).Magnitude)
+        local hp = math.floor(hum and hum.Health or 100)
+        local maxHp = math.max(hum and hum.MaxHealth or 100, 1)
+
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "TargetInfo"
+        billboard.Adornee = root
+        billboard.Size = UDim2.fromOffset(160, 56)
+        billboard.StudsOffset = Vector3.new(0, 3.5, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Parent = targetEspFolder
+
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Size = UDim2.new(1, 0, 0, 18)
+        nameLabel.Text = target.DisplayName .. " (@" .. target.Name .. ")"
+        nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        nameLabel.TextStrokeTransparency = 0.3
+        nameLabel.Font = Enum.Font.GothamBold
+        nameLabel.TextSize = 13
+        nameLabel.Parent = billboard
+
+        local distanceLabel = Instance.new("TextLabel")
+        distanceLabel.BackgroundTransparency = 1
+        distanceLabel.Size = UDim2.new(1, 0, 0, 16)
+        distanceLabel.Position = UDim2.fromOffset(0, 18)
+        distanceLabel.Text = "Distance: " .. dist .. "m"
+        distanceLabel.TextColor3 = Color3.fromRGB(200, 200, 220)
+        distanceLabel.Font = Enum.Font.Gotham
+        distanceLabel.TextSize = 11
+        distanceLabel.Parent = billboard
+
+        local hpLabel = Instance.new("TextLabel")
+        hpLabel.BackgroundTransparency = 1
+        hpLabel.Size = UDim2.new(1, 0, 0, 16)
+        hpLabel.Position = UDim2.fromOffset(0, 34)
+        hpLabel.Text = "HP: " .. hp .. "/" .. math.floor(maxHp)
+        hpLabel.TextColor3 = Color3.fromRGB(80, 255, 120)
+        hpLabel.Font = Enum.Font.Gotham
+        hpLabel.TextSize = 11
+        hpLabel.Parent = billboard
+
+        local hpBg = Instance.new("Frame")
+        hpBg.Size = UDim2.new(1, -12, 0, 3)
+        hpBg.Position = UDim2.new(0, 6, 1, -4)
+        hpBg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+        hpBg.BorderSizePixel = 0
+        hpBg.Parent = billboard
+
+        local hpFill = Instance.new("Frame")
+        hpFill.Size = UDim2.new(math.clamp(hp / maxHp, 0, 1), 0, 1, 0)
+        hpFill.BackgroundColor3 = Color3.fromRGB(80, 220, 100)
+        hpFill.BorderSizePixel = 0
+        hpFill.Parent = hpBg
+
+        -- Beam Tracer from Camera to Target
+        local cam = Workspace.CurrentCamera
+        if cam then
+            local att0 = Instance.new("Attachment")
+            att0.Parent = cam
+            local att1 = Instance.new("Attachment")
+            att1.Parent = root
+            local beam = Instance.new("Beam")
+            beam.Name = "tracerBeam"
+            beam.Attachment0 = att0
+            beam.Attachment1 = att1
+            beam.Width0 = 0.06
+            beam.Width1 = 0.06
+            beam.FaceCamera = true
+            beam.Color = ColorSequence.new(Color3.fromRGB(170, 80, 255))
+            beam.Parent = targetEspFolder
+        end
+    end)
+end
+
+RunService.RenderStepped:Connect(function()
+    pcall(updateTargetESP)
+end)
+
+-- Auto-Aura / Auto-Throw loop: grabs nearest prop and hurls it at target HRP
+local autoAuraTick = makeThrottled(0.3)
+task.spawn(function()
+    while true do
+        task.wait(0.3)
+        autoAuraTick(function()
+            if not Grabs_Config.AutoAura then return end
+            local char = LocalPlayer.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if not isBasePart(root) or not root:IsDescendantOf(Workspace) then return end
+
+            local target = getClosestTarget()
+            if not target or not target.Character then return end
+            local tRoot = target.Character:FindFirstChild("HumanoidRootPart")
+            if not isBasePart(tRoot) or not tRoot:IsDescendantOf(Workspace) then return end
+
+            local distToTarget = (tRoot.Position - root.Position).Magnitude
+            if distToTarget > (Grabs_Config.AuraRadius or 35) then return end
+
+            -- Find nearest free prop within 30 studs
+            local bestProp = nil
+            local bestDist = 30
+            pcall(function()
+                for _, obj in ipairs(Workspace:GetDescendants()) do
+                    if isBasePart(obj) and not belongsToAnyPlayer(obj) and obj ~= HeldObject and not obj.Anchored then
+                        if obj:IsDescendantOf(Workspace) then
+                            local d = (obj.Position - root.Position).Magnitude
+                            if d < bestDist then
+                                bestDist = d
+                                bestProp = obj
+                            end
+                        end
+                    end
+                end
+            end)
+
+            if bestProp and bestProp.Parent and bestProp:IsDescendantOf(Workspace) then
+                pcall(function()
+                    claimNetworkOwnership(bestProp)
+                    bestProp.CFrame = root.CFrame + root.CFrame.LookVector * 3 + Vector3.new(0, 2, 0)
+                    bestProp.AssemblyLinearVelocity = Vector3.zero
+                    task.defer(function()
+                        if bestProp and bestProp.Parent and bestProp:IsDescendantOf(Workspace) then
+                            local dir = (tRoot.Position - bestProp.Position).Unit
+                            applyThrowForce(bestProp, dir, 3500)
+                        end
+                    end)
+                end)
+            end
+        end)
+    end
+end)
+
 -- Infinite Line Distance: patch Mouse Raycast params while enabled
 local Original_RaycastParams = nil
 local RayParams = Instance.new("RaycastParams")
@@ -1322,6 +1539,27 @@ Tabs.Grabs:AddButton({
         end
         Fluent:Notify({ Title = "Grab", Content = "Held object released!", Duration = 2 })
     end
+})
+
+
+Tabs.Grabs:AddSection("Target & Aura System (Module 5)")
+
+local AntiFlingToggle = Tabs.Grabs:AddToggle("AntiFlingToggle", { Title = "Anti-Fling Guard", Default = false })
+AntiFlingToggle:OnChanged(function(Value) Grabs_Config.AntiFling = Value end)
+
+local TargetESPToggle = Tabs.Grabs:AddToggle("TargetESPToggle", { Title = "Target ESP & Tracers", Default = false })
+TargetESPToggle:OnChanged(function(Value) Grabs_Config.TargetESP = Value end)
+
+local AutoAuraToggle = Tabs.Grabs:AddToggle("AutoAuraToggle", { Title = "Auto-Aura (Prop Thrower)", Default = false })
+AutoAuraToggle:OnChanged(function(Value) Grabs_Config.AutoAura = Value end)
+
+Tabs.Grabs:AddSlider("AuraRadiusSlider", {
+    Title = "Aura Radius",
+    Default = 35,
+    Min = 10,
+    Max = 100,
+    Rounding = 0,
+    Callback = function(Value) Grabs_Config.AuraRadius = Value end
 })
 
 
