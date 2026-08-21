@@ -1,6 +1,6 @@
 -- ================================================================
 -- GRADIENT HUB | FTAP - MONOLITHIC BUILD (generated, do not edit)
--- Generated: 2026-08-21 11:26:38
+-- Generated: 2026-08-21 12:00:26
 -- Source split: part1 (main.luau) + 11 inlined modules + tail
 -- ================================================================
 
@@ -8215,6 +8215,84 @@ Tabs.Protections:AddToggle("NinjaAntiKickToggle", { Title = "Ninja Shuriken Anti
         startAntiKick(Value, hrp, inv, spawnToyHelper, setNetOwnerHelper, destroyToy, stickyEvt, LocalPlayer)
     end)
     Fluent:Notify({ Title = "Anti-Kick", Content = "Ninja Shuriken Anti-Kick set to " .. tostring(Value), Duration = 2 })
+end })
+
+-- ================================================================
+-- ANTI INPUT MODULE (OMEGA PORT)
+-- ================================================================
+local antiInputMethod = "FoodCoconut"
+local antiInputSpeed = 0.1
+local antiinputlag = false
+
+local function grabHelper(item)
+    fireRemote("HoldEvents", "Hold", item)
+    fireRemote("GrabEvents", "CreateGrabLine")
+end
+
+local function dropHelper(item, cf)
+    fireRemote("HoldEvents", "Drop", item)
+    fireRemote("GrabEvents", "DestroyGrabLine")
+    pcall(function()
+        if item and item:IsA("Model") and item.PrimaryPart then
+            item.PrimaryPart.CFrame = cf
+        elseif item and item:IsA("BasePart") then
+            item.CFrame = cf
+        end
+    end)
+end
+
+local function startAntiInput(v, HRP, inv, spawntoy, grab, drop, DestroyToy, plr)
+    antiinputlag = v
+    if antiinputlag then
+        local item = inv:FindFirstChild("burger") or spawntoy(antiInputMethod, HRP.CFrame)
+        if item then item.Name = "burger" end
+        task.wait(0.2)
+        task.spawn(function()
+            while antiinputlag and task.wait() do
+                if item and item.Parent then
+                    task.spawn(function() grab(item) end)
+                    task.wait(antiInputSpeed)
+                    task.spawn(function() drop(item, CFrame.new(0, 1e9, 0)) end)
+                    pcall(function()
+                        local char = plr.Character
+                        local leftArm = char and (char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftHand"))
+                        local leftGrip = leftArm and leftArm:FindFirstChild("LeftGripAttachment")
+                        local holdPart = item:FindFirstChild("HoldPart")
+                        local rigid = holdPart and holdPart:FindFirstChild("RigidConstraint")
+                        if (rigid and rigid.Attachment1 and rigid.Attachment1 ~= leftGrip) or (not item or not item.Parent) then
+                            if inv:FindFirstChild("burger") and DestroyToy then
+                                DestroyToy:FireServer(inv.burger)
+                            end
+                            item = spawntoy(antiInputMethod, HRP.CFrame)
+                            repeat task.wait() until item
+                            item.Name = "burger"
+                        end
+                    end)
+                else
+                    item = spawntoy(antiInputMethod, HRP.CFrame)
+                    if item then item.Name = "burger" end
+                    task.wait(0.5)
+                end
+            end
+        end)
+    else
+        if inv and inv:FindFirstChild("burger") then 
+            local destroyToy = getRemote("ToyEvents", "DestroyToy") or getRemote("ItemEvents", "DestroyItem")
+            if destroyToy then
+                destroyToy:FireServer(inv.burger)
+            end
+        end
+    end
+end
+
+Tabs.Protections:AddToggle("AntiInputOmegaToggle", { Title = "Anti Input (OMEGA)", Default = false, Callback = function(Value)
+    pcall(function()
+        local hrp = getRoot()
+        local inv = LocalPlayer:FindFirstChildOfClass("Backpack") or LocalPlayer.Character or LocalPlayer
+        local destroyToy = getRemote("ToyEvents", "DestroyToy") or getRemote("ItemEvents", "DestroyItem")
+        startAntiInput(Value, hrp, inv, spawnToyHelper, grabHelper, dropHelper, destroyToy, LocalPlayer)
+    end)
+    Fluent:Notify({ Title = "Anti Input", Content = "Anti Input (OMEGA) set to " .. tostring(Value), Duration = 2 })
 end })
 
 
